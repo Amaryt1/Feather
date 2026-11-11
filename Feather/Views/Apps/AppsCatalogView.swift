@@ -118,6 +118,7 @@ struct AppsCatalogView: View {
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var loadError = false
+    private let dataService = NBFetchService()
 
     // Source endpoints are intentionally kept in app configuration and are never shown in the interface.
     private let sources: [AppsCatalogSource] = [
@@ -172,14 +173,18 @@ struct AppsCatalogView: View {
                     ProgressView("جارٍ تحميل التطبيقات…")
                     Spacer()
                 } else if filteredEntries.isEmpty {
-                    ContentUnavailableView {
-                        Label(
-                            searchText.isEmpty ? "لا توجد تطبيقات في هذا التصنيف" : "لا توجد نتائج",
-                            systemImage: "square.grid.3x3"
-                        )
-                    } description: {
+                    VStack(spacing: 10) {
+                        Image(systemName: "square.grid.3x3")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.secondary)
+                        Text(searchText.isEmpty ? "لا توجد تطبيقات في هذا التصنيف" : "لا توجد نتائج")
+                            .font(.headline)
                         Text(loadError ? "تعذر تحميل بعض المصادر. اسحب للأسفل لإعادة المحاولة." : "جرّب اختيار تصنيف آخر أو تغيير عبارة البحث.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
+                    .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
@@ -316,7 +321,7 @@ struct AppsCatalogView: View {
         var loaded: [SourceAppsView.SourceRepositoryContext] = []
         for source in sources {
             let result: ASRepository? = await withCheckedContinuation { continuation in
-                NBFetchService().fetch(from: source.url) { (result: Result<ASRepository, Error>) in
+                dataService.fetch(from: source.url) { (result: Result<ASRepository, Error>) in
                     switch result {
                     case .success(let repository):
                         continuation.resume(returning: repository)
