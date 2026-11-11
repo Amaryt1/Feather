@@ -1,9 +1,6 @@
 name: Validate iOS Simulator
 
 on:
-  push:
-    branches:
-      - feature/custom-about-page
   pull_request:
     branches:
       - main
