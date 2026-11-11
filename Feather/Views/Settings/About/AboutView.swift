@@ -69,6 +69,7 @@ struct AboutView: View {
             .padding(.bottom, 30)
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        .environment(\.layoutDirection, .rightToLeft)
         .navigationTitle("حول")
         .navigationBarTitleDisplayMode(.inline)
     }
