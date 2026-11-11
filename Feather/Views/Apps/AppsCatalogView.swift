@@ -241,7 +241,7 @@ struct AppsCatalogView: View {
         ),
         AppsCatalogSource(
             name: "LiveContainer",
-            url: URL(string: "https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json")!
+            url: URL(string: "https://raw.githubusercontent.com/LiveContainer/LiveContainer/main/.github/apps.json")!
         ),
         AppsCatalogSource(
             name: "App Iraq",
