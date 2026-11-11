@@ -46,10 +46,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     case jailbreak
     case signing
     case design
-    case media
     case artificialIntelligence
-    case productivity
-    case developer
     case education
     case social
     case utilities
@@ -66,14 +63,11 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         case .media: "الوسائط والترفيه"
         case .productivity: "الإنتاجية"
         case .developerTools: "أدوات المطورين"
-        case .customization: "التخصيص والأدوات"
+        case .customization: "التخصيص"
         case .jailbreak: "الجيلبريك"
         case .signing: "التوقيع والتثبيت"
         case .design: "التصميم"
-        case .media: "الأفلام والموسيقى"
         case .artificialIntelligence: "الذكاء الاصطناعي"
-        case .productivity: "الإنتاجية"
-        case .developer: "أدوات المطورين"
         case .education: "التعليم"
         case .social: "التواصل الاجتماعي"
         case .utilities: "الأدوات"
@@ -89,15 +83,12 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         case .emulators: "arcade.stick"
         case .media: "play.rectangle"
         case .productivity: "checklist"
-        case .developerTools: "hammer"
+        case .developerTools: "chevron.left.forwardslash.chevron.right"
         case .customization: "slider.horizontal.3"
         case .jailbreak: "wrench.and.screwdriver"
         case .signing: "signature"
         case .design: "paintpalette"
-        case .media: "play.rectangle"
         case .artificialIntelligence: "sparkles"
-        case .productivity: "checklist"
-        case .developer: "chevron.left.forwardslash.chevron.right"
         case .education: "graduationcap"
         case .social: "bubble.left.and.bubble.right"
         case .utilities: "wrench.and.screwdriver"
@@ -128,120 +119,92 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
             words.contains { text.contains($0) }
         }
 
-        // Emulators are checked before games because emulator listings often mention games.
+        // Apply the most specific classifications before broad fallbacks.
         if containsAny([
             "emulator", "emulation", "retroarch", "ppsspp", "delta emulator",
             "nes emulator", "game boy", "playstation portable", "psp emulator",
             "stiknes", "محاكي", "محاكاة"
-        ]) {
-            return .emulators
-        }
+        ]) { return .emulators }
+
         if containsAny([
             "artificial intelligence", "ai assistant", "chatgpt", "openai",
             "claude", "gemini", "copilot", "stable diffusion", "large language model",
             "machine learning", "ذكاء اصطناعي"
-        ]) {
-            return .artificialIntelligence
-        }
+        ]) { return .artificialIntelligence }
+
         if containsAny([
             "jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine",
             "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza",
             "tweak", "package manager", "جيلبريك", "تويك"
-        ]) {
-            return .jailbreak
-        }
+        ]) { return .jailbreak }
+
         if containsAny([
             "codesigning", "code signing", "signing app", "signer", "signing",
             "ksign", "esign", "scarlet", "sideload", "side-loading",
-            "ipa installer", "certificate manager",
-            "توقيع", "تثبيت ipa", "شهادات"
-        ]) {
-            return .signing
-        }
+            "ipa installer", "certificate manager", "توقيع", "تثبيت ipa", "شهادات"
+        ]) { return .signing }
+
         if containsAny([
             "photo editor", "photo editing", "graphic design", "design tool",
             "drawing", "illustration", "bazaart", "procreate", "canva",
             "vector editor", "video editor", "تصميم", "تعديل الصور", "رسم"
-        ]) {
-            return .design
-        }
+        ]) { return .design }
+
         if containsAny([
             "movie", "movies", "tv series", "streaming", "iptv", "anime",
             "video player", "music player", "podcast", "cinema", "film",
             "أفلام", "مسلسلات", "انمي", "أنمي", "مشاهدة", "بث"
-        ]) {
-            return .media
-        }
-        if containsAny([
-            "game", "games", "arcade", "rpg", "minecraft", "terraria",
-            "fortnite", "flappy bird", "gameplay", "لعبة", "ألعاب", "العاب"
-        ]) {
-            return .games
-        }
+        ]) { return .media }
+
         if containsAny([
             "ide", "code editor", "developer tool", "development tool",
             "terminal", "git client", "ssh client", "debugger", "programming",
             "xcode", "مطور", "برمجة"
-        ]) {
-            return .developer
-        }
+        ]) { return .developerTools }
+
         if containsAny([
             "language learning", "dictionary", "flashcards", "course",
             "learning app", "education", "school", "university", "تعليم",
             "قاموس", "تعلم", "دراسة"
-        ]) {
-            return .education
-        }
+        ]) { return .education }
+
         if containsAny([
             "productivity", "task manager", "to-do", "todo list", "notes",
             "calendar", "office suite", "document editor", "workflow",
             "إنتاجية", "مهام", "ملاحظات"
-        ]) {
-            return .productivity
-        }
+        ]) { return .productivity }
+
         if containsAny([
             "social network", "messenger", "chat app", "telegram", "discord",
             "reddit", "mastodon", "social media", "شبكة اجتماعية", "مراسلة"
-        ]) {
-            return .social
-        }
+        ]) { return .social }
+
+        if containsAny([
+            "theme", "icon pack", "customization", "widgets", "wallpaper",
+            "lock screen", "تخصيص", "ثيمات", "خلفيات"
+        ]) { return .customization }
+
+        if containsAny([
+            "game", "games", "arcade", "rpg", "minecraft", "terraria",
+            "fortnite", "flappy bird", "gameplay", "لعبة", "ألعاب", "العاب"
+        ]) { return .games }
 
         switch rawCategory {
-        case "games", "game", "gaming":
-            return .games
-        case "graphics", "photo-video", "design", "photography":
-            return .design
-        case "ai", "artificial-intelligence", "machine-learning":
-            return .artificialIntelligence
-        case "emulator", "emulators":
-            return .emulators
-        case "developer", "development":
-            return .developerTools
-        case "entertainment", "music", "video", "media":
-            return .media
-        case "productivity", "business":
-            return .productivity
-        case "customization", "themes", "personalization":
-            return .customization
-        case "jailbreak", "tweaks":
-            return .jailbreak
-        case "signing", "sideloading", "utilities-signing":
-            return .signing
-        case "developer", "development":
-            return .developer
-        case "education":
-            return .education
-        case "productivity":
-            return .productivity
-        case "entertainment", "music", "video", "photo-video":
-            return .media
-        case "social":
-            return .social
-        case "utilities", "utility", "lifestyle", "health", "business",
-             "navigation", "weather", "finance", "news":
-            return .utilities
-        default:
-            return .programs
+        case "games", "game", "gaming": return .games
+        case "graphics", "photo-video", "design", "photography": return .design
+        case "ai", "artificial-intelligence", "machine-learning": return .artificialIntelligence
+        case "emulator", "emulators": return .emulators
+        case "developer", "development": return .developerTools
+        case "entertainment", "music", "video", "media": return .media
+        case "productivity", "business": return .productivity
+        case "customization", "themes", "personalization": return .customization
+        case "jailbreak", "tweaks": return .jailbreak
+        case "signing", "sideloading", "utilities-signing": return .signing
+        case "education": return .education
+        case "social": return .social
+        case "utilities", "utility", "lifestyle", "health", "navigation",
+             "weather", "finance", "news": return .utilities
+        default: return .programs
         }
     }
 }
