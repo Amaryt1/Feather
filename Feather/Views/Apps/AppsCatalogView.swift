@@ -25,6 +25,10 @@ private struct AppsCatalogEntry: Identifiable {
         "\(sourceURL?.absoluteString ?? source.name ?? "catalog").\(app.currentUniqueId)"
     }
 
+    var isFeatured: Bool {
+        app.category?.lowercased() == "featured"
+    }
+
     var category: AppsCatalogCategory {
         AppsCatalogCategory.classify(app)
     }
@@ -34,11 +38,18 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     case all
     case featured
     case games
-    case programs
-    case jailbreak
-    case design
-    case artificialIntelligence
     case emulators
+    case jailbreak
+    case signing
+    case design
+    case media
+    case artificialIntelligence
+    case productivity
+    case developer
+    case education
+    case social
+    case utilities
+    case programs
 
     var id: String { rawValue }
 
@@ -47,11 +58,18 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         case .all: "الكل"
         case .featured: "المميز"
         case .games: "الألعاب"
-        case .programs: "البرامج"
-        case .jailbreak: "برامج الجيلبريك"
-        case .design: "التصميم"
-        case .artificialIntelligence: "الذكاء الاصطناعي"
         case .emulators: "المحاكيات"
+        case .jailbreak: "الجيلبريك"
+        case .signing: "التوقيع والتثبيت"
+        case .design: "التصميم"
+        case .media: "الأفلام والموسيقى"
+        case .artificialIntelligence: "الذكاء الاصطناعي"
+        case .productivity: "الإنتاجية"
+        case .developer: "أدوات المطورين"
+        case .education: "التعليم"
+        case .social: "التواصل الاجتماعي"
+        case .utilities: "الأدوات"
+        case .programs: "برامج عامة"
         }
     }
 
@@ -60,17 +78,22 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         case .all: "square.grid.2x2"
         case .featured: "star.fill"
         case .games: "gamecontroller"
-        case .programs: "app"
-        case .jailbreak: "wrench.and.screwdriver"
-        case .design: "paintpalette"
-        case .artificialIntelligence: "sparkles"
         case .emulators: "arcade.stick"
+        case .jailbreak: "wrench.and.screwdriver"
+        case .signing: "signature"
+        case .design: "paintpalette"
+        case .media: "play.rectangle"
+        case .artificialIntelligence: "sparkles"
+        case .productivity: "checklist"
+        case .developer: "chevron.left.forwardslash.chevron.right"
+        case .education: "graduationcap"
+        case .social: "bubble.left.and.bubble.right"
+        case .utilities: "wrench.and.screwdriver"
+        case .programs: "app"
         }
     }
 
     static func classify(_ app: ASRepository.App) -> AppsCatalogCategory {
-        if app.category == "featured" { return .featured }
-
         let rawCategory = (app.category ?? "")
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()
@@ -93,42 +116,82 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
             words.contains { text.contains($0) }
         }
 
-        // Classify by the app's actual purpose before falling back to repository metadata.
+        // Emulators are checked before games because emulator listings often mention games.
         if containsAny([
             "emulator", "emulation", "retroarch", "ppsspp", "delta emulator",
             "nes emulator", "game boy", "playstation portable", "psp emulator",
-            "محاكي", "محاكاة"
+            "stiknes", "محاكي", "محاكاة"
         ]) {
             return .emulators
         }
         if containsAny([
             "artificial intelligence", "ai assistant", "chatgpt", "openai",
-            "claude", "gemini", "copilot", "stable diffusion", "llm",
-            "ذكاء اصطناعي"
+            "claude", "gemini", "copilot", "stable diffusion", "large language model",
+            "machine learning", "ذكاء اصطناعي"
         ]) {
             return .artificialIntelligence
         }
         if containsAny([
-            "photo editor", "photo editing", "graphic design", "design tool",
-            "drawing", "illustration", "bazaart", "procreate", "canva",
-            "vector editor", "تصميم", "تعديل الصور", "رسم"
-        ]) {
-            return .design
-        }
-        if containsAny([
             "jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine",
             "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza",
-            "tweak", "signing", "signer", "ksign", "esign", "scarlet",
-            "feather", "side-loading", "sideloading", "jitterbug",
-            "جيلبريك", "توقيع", "تثبيت ipa"
+            "tweak", "package manager", "جيلبريك", "تويك"
         ]) {
             return .jailbreak
         }
         if containsAny([
+            "codesigning", "code signing", "signing app", "signer", "signing",
+            "ksign", "esign", "scarlet", "feather", "sideload", "side-loading",
+            "ipa installer", "ipa installer", "certificate manager",
+            "توقيع", "تثبيت ipa", "شهادات"
+        ]) {
+            return .signing
+        }
+        if containsAny([
+            "photo editor", "photo editing", "graphic design", "design tool",
+            "drawing", "illustration", "bazaart", "procreate", "canva",
+            "vector editor", "video editor", "تصميم", "تعديل الصور", "رسم"
+        ]) {
+            return .design
+        }
+        if containsAny([
+            "movie", "movies", "tv series", "streaming", "iptv", "anime",
+            "video player", "music player", "podcast", "cinema", "film",
+            "أفلام", "مسلسلات", "انمي", "أنمي", "مشاهدة", "بث"
+        ]) {
+            return .media
+        }
+        if containsAny([
             "game", "games", "arcade", "rpg", "minecraft", "terraria",
-            "fortnite", "flappy bird", "لعبة", "ألعاب", "العاب"
+            "fortnite", "flappy bird", "gameplay", "لعبة", "ألعاب", "العاب"
         ]) {
             return .games
+        }
+        if containsAny([
+            "ide", "code editor", "developer tool", "development tool",
+            "terminal", "git client", "ssh client", "debugger", "programming",
+            "xcode", "مطور", "برمجة"
+        ]) {
+            return .developer
+        }
+        if containsAny([
+            "language learning", "dictionary", "flashcards", "course",
+            "learning app", "education", "school", "university", "تعليم",
+            "قاموس", "تعلم", "دراسة"
+        ]) {
+            return .education
+        }
+        if containsAny([
+            "productivity", "task manager", "to-do", "todo list", "notes",
+            "calendar", "office suite", "document editor", "workflow",
+            "إنتاجية", "مهام", "ملاحظات"
+        ]) {
+            return .productivity
+        }
+        if containsAny([
+            "social network", "messenger", "chat app", "telegram", "discord",
+            "reddit", "mastodon", "social media", "شبكة اجتماعية", "مراسلة"
+        ]) {
+            return .social
         }
 
         switch rawCategory {
@@ -140,12 +203,23 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
             return .artificialIntelligence
         case "emulator", "emulators":
             return .emulators
-        case "jailbreak", "tweaks", "signing", "sideloading":
+        case "jailbreak", "tweaks":
             return .jailbreak
-        case "developer", "utilities", "productivity", "education",
-             "entertainment", "music", "social", "lifestyle", "health",
-             "business", "navigation", "weather", "finance", "news":
-            return .programs
+        case "signing", "sideloading", "utilities-signing":
+            return .signing
+        case "developer", "development":
+            return .developer
+        case "education":
+            return .education
+        case "productivity":
+            return .productivity
+        case "entertainment", "music", "video", "photo-video":
+            return .media
+        case "social":
+            return .social
+        case "utilities", "utility", "lifestyle", "health", "business",
+             "navigation", "weather", "finance", "news":
+            return .utilities
         default:
             return .programs
         }
@@ -163,6 +237,8 @@ struct AppsCatalogView: View {
     private let dataService = NBFetchService()
 
     // Source endpoints are intentionally kept in app configuration and are never shown in the interface.
+    // AppIraq's PHP/JSON endpoints are not added until their response schemas can be verified as AltStore-compatible.
+    // browse_categories.json is category metadata, not an IPA feed. Backloop's pack.json is a discontinued certificate pack.
     private let sources: [AppsCatalogSource] = [
         AppsCatalogSource(
             name: "التطبيقات المميزة",
@@ -182,7 +258,7 @@ struct AppsCatalogView: View {
         ),
         AppsCatalogSource(
             name: "LiveContainer",
-            url: URL(string: "https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json")!
+            url: URL(string: "https://raw.githubusercontent.com/LiveContainer/LiveContainer/main/.github/apps.json")!
         )
     ]
 
@@ -196,7 +272,15 @@ struct AppsCatalogView: View {
 
     private var filteredEntries: [AppsCatalogEntry] {
         entries.filter { entry in
-            let matchesCategory = selectedCategory == .all || entry.category == selectedCategory
+            let matchesCategory: Bool
+            switch selectedCategory {
+            case .all:
+                matchesCategory = true
+            case .featured:
+                matchesCategory = entry.isFeatured
+            default:
+                matchesCategory = entry.category == selectedCategory
+            }
             let searchableText = [
                 entry.app.currentName,
                 entry.app.currentDescription ?? "",
@@ -289,7 +373,7 @@ struct AppsCatalogView: View {
                             selectedCategory = category
                         }
                     } label: {
-                        Label(category.title, systemImage: category.icon)
+                        Label("\(category.title) · \(categoryCount(category))", systemImage: category.icon)
                             .font(.subheadline.weight(.medium))
                             .padding(.horizontal, 13)
                             .padding(.vertical, 9)
@@ -304,6 +388,18 @@ struct AppsCatalogView: View {
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
+        }
+    }
+
+
+    private func categoryCount(_ category: AppsCatalogCategory) -> Int {
+        switch category {
+        case .all:
+            return entries.count
+        case .featured:
+            return entries.filter(\.isFeatured).count
+        default:
+            return entries.filter { $0.category == category }.count
         }
     }
 
@@ -338,7 +434,7 @@ struct AppsCatalogView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
-                        Text(entry.category.title)
+                        Text(entry.isFeatured ? "مميز · \(entry.category.title)" : entry.category.title)
                             .font(.caption)
                             .foregroundStyle(Color.accentColor)
                     }
