@@ -255,9 +255,36 @@ struct AppsCatalogView: View {
     ]
 
     private var entries: [AppsCatalogEntry] {
-        repositories.flatMap { context in
-            context.repository.apps.map {
-                AppsCatalogEntry(sourceURL: context.sourceURL, source: context.repository, app: $0)
+        // Sources often list the same app more than once. Keep the first occurrence
+        // (the curated FeaturedApps feed is intentionally first in the source list).
+        var seen = Set<String>()
+
+        return repositories.flatMap { context in
+            context.repository.apps.compactMap { app in
+                let entry = AppsCatalogEntry(
+                    sourceURL: context.sourceURL,
+                    source: context.repository,
+                    app: app
+                )
+
+                let bundleIdentifier = app.id?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+
+                let key: String
+                if let bundleIdentifier, !bundleIdentifier.isEmpty {
+                    key = "bundle:\(bundleIdentifier)"
+                } else {
+                    let normalizedName = app.currentName
+                        .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let normalizedDeveloper = (app.developer ?? "")
+                        .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    key = "name:\(normalizedName)|developer:\(normalizedDeveloper)"
+                }
+
+                return seen.insert(key).inserted ? entry : nil
             }
         }
     }
