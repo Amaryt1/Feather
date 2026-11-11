@@ -70,6 +70,13 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
 
     static func classify(_ app: ASRepository.App) -> AppsCatalogCategory {
         if app.category == "featured" { return .featured }
+
+        let rawCategory = (app.category ?? "")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+            .replacingOccurrences(of: " ", with: "-")
+
         let text = [
             app.category,
             app.name,
@@ -79,7 +86,6 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
             app.developer
         ]
         .compactMap { $0 }
-        .joined(separator: " ")
         .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
         .lowercased()
 
@@ -87,26 +93,58 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
             words.contains { text.contains($0) }
         }
 
-        if containsAny(["emulator", "emulation", "retroarch", "ppsspp", "delta emulator", "nes emulator", "game boy"]) {
+        // Classify by the app's actual purpose before falling back to repository metadata.
+        if containsAny([
+            "emulator", "emulation", "retroarch", "ppsspp", "delta emulator",
+            "nes emulator", "game boy", "playstation portable", "psp emulator",
+            "محاكي", "محاكاة"
+        ]) {
             return .emulators
         }
-        if containsAny(["game", "games", "arcade", "rpg", "minecraft", "terraria", "fortnite", "flappy bird"]) {
-            return .games
-        }
-        if containsAny(["artificial intelligence", "ai assistant", "chatgpt", "openai", "claude", "gemini", "copilot", "stable diffusion"]) {
+        if containsAny([
+            "artificial intelligence", "ai assistant", "chatgpt", "openai",
+            "claude", "gemini", "copilot", "stable diffusion", "llm",
+            "ذكاء اصطناعي"
+        ]) {
             return .artificialIntelligence
         }
-        if containsAny(["photo editor", "photo editing", "graphic design", "design tool", "drawing", "illustration", "bazaart", "procreate"]) {
+        if containsAny([
+            "photo editor", "photo editing", "graphic design", "design tool",
+            "drawing", "illustration", "bazaart", "procreate", "canva",
+            "vector editor", "تصميم", "تعديل الصور", "رسم"
+        ]) {
             return .design
         }
-        if containsAny(["jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine", "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza", "tweak", "signing", "signer", "ksign", "esign", "side-loading", "sideloading"]) {
+        if containsAny([
+            "jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine",
+            "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza",
+            "tweak", "signing", "signer", "ksign", "esign", "scarlet",
+            "feather", "side-loading", "sideloading", "jitterbug",
+            "جيلبريك", "توقيع", "تثبيت ipa"
+        ]) {
             return .jailbreak
         }
+        if containsAny([
+            "game", "games", "arcade", "rpg", "minecraft", "terraria",
+            "fortnite", "flappy bird", "لعبة", "ألعاب", "العاب"
+        ]) {
+            return .games
+        }
 
-        switch (app.category ?? "").lowercased() {
-        case "games", "game": return .games
-        case "graphics", "photo-video", "design": return .design
-        case "developer", "utilities", "productivity", "education", "entertainment", "music", "social":
+        switch rawCategory {
+        case "games", "game", "gaming":
+            return .games
+        case "graphics", "photo-video", "design", "photography":
+            return .design
+        case "ai", "artificial-intelligence", "machine-learning":
+            return .artificialIntelligence
+        case "emulator", "emulators":
+            return .emulators
+        case "jailbreak", "tweaks", "signing", "sideloading":
+            return .jailbreak
+        case "developer", "utilities", "productivity", "education",
+             "entertainment", "music", "social", "lifestyle", "health",
+             "business", "navigation", "weather", "finance", "news":
             return .programs
         default:
             return .programs
