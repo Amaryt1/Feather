@@ -140,8 +140,8 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         }
         if containsAny([
             "codesigning", "code signing", "signing app", "signer", "signing",
-            "ksign", "esign", "scarlet", "feather", "sideload", "side-loading",
-            "ipa installer", "ipa installer", "certificate manager",
+            "ksign", "esign", "scarlet", "sideload", "side-loading",
+            "ipa installer", "certificate manager",
             "توقيع", "تثبيت ipa", "شهادات"
         ]) {
             return .signing
@@ -237,7 +237,7 @@ struct AppsCatalogView: View {
     private let dataService = NBFetchService()
 
     // Source endpoints are intentionally kept in app configuration and are never shown in the interface.
-    // AppIraq's PHP/JSON endpoints are not added until their response schemas can be verified as AltStore-compatible.
+    // AppIraq's two app endpoints are attempted as optional feeds; incompatible responses are isolated from other catalogs.
     // browse_categories.json is category metadata, not an IPA feed. Backloop's pack.json is a discontinued certificate pack.
     private let sources: [AppsCatalogSource] = [
         AppsCatalogSource(
@@ -259,6 +259,14 @@ struct AppsCatalogView: View {
         AppsCatalogSource(
             name: "LiveContainer",
             url: URL(string: "https://raw.githubusercontent.com/LiveContainer/LiveContainer/main/.github/apps.json")!
+        ),
+        AppsCatalogSource(
+            name: "App Iraq",
+            url: URL(string: "https://appiraq.com/han.json")!
+        ),
+        AppsCatalogSource(
+            name: "App Iraq API",
+            url: URL(string: "https://appiraq.com/source.php?action=getAll")!
         )
     ]
 
@@ -297,6 +305,18 @@ struct AppsCatalogView: View {
         NBNavigationView("التطبيقات") {
             VStack(spacing: 0) {
                 categoryPicker
+
+                if loadError && !repositories.isEmpty {
+                    Label(
+                        "تم تحميل المصادر المتوافقة؛ تعذر قراءة مصدر أو أكثر",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+                }
 
                 if isLoading && repositories.isEmpty {
                     Spacer()
