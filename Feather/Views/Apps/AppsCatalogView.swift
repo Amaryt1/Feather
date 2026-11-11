@@ -32,6 +32,7 @@ private struct AppsCatalogEntry: Identifiable {
 
 private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     case all
+    case featured
     case games
     case programs
     case jailbreak
@@ -44,6 +45,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .all: "الكل"
+        case .featured: "المميز"
         case .games: "الألعاب"
         case .programs: "البرامج"
         case .jailbreak: "برامج الجيلبريك"
@@ -56,6 +58,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .all: "square.grid.2x2"
+        case .featured: "star.fill"
         case .games: "gamecontroller"
         case .programs: "app"
         case .jailbreak: "wrench.and.screwdriver"
@@ -66,6 +69,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     }
 
     static func classify(_ app: ASRepository.App) -> AppsCatalogCategory {
+        if app.category == "featured" { return .featured }
         let text = [
             app.category,
             app.name,
@@ -122,6 +126,10 @@ struct AppsCatalogView: View {
 
     // Source endpoints are intentionally kept in app configuration and are never shown in the interface.
     private let sources: [AppsCatalogSource] = [
+        AppsCatalogSource(
+            name: "التطبيقات المميزة",
+            url: URL(string: "https://raw.githubusercontent.com/Amaryt1/Feather/feature/apps-catalog/Feather/Resources/FeaturedApps.json")!
+        ),
         AppsCatalogSource(
             name: "Ksign",
             url: URL(string: "https://raw.githubusercontent.com/Nyasami/Ksign/refs/heads/main/repo.json")!
