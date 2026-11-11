@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import UIKit
+import NimbleExtensions
 
 // MARK: - View
 struct AboutView: View {
