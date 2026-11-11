@@ -278,6 +278,12 @@ struct AppsCatalogView: View {
         }
     }
 
+    private var visibleCategories: [AppsCatalogCategory] {
+        AppsCatalogCategory.allCases.filter { category in
+            category == .all || categoryCount(category) > 0
+        }
+    }
+
     private var filteredEntries: [AppsCatalogEntry] {
         entries.filter { entry in
             let matchesCategory: Bool
@@ -386,7 +392,7 @@ struct AppsCatalogView: View {
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(AppsCatalogCategory.allCases) { category in
+                ForEach(visibleCategories) { category in
                     let isSelected = selectedCategory == category
                     Button {
                         withAnimation(.snappy(duration: 0.2)) {
