@@ -21,8 +21,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Select supported Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.3.0.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.0.app
+          else
+            echo "::warning::Xcode 26.3.0 is not installed; using the runner's selected Xcode."
+          fi
+          xcodebuild -version
 
       - name: Resolve Swift packages
         run: |
