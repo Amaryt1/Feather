@@ -26,7 +26,7 @@ private struct AppsCatalogEntry: Identifiable {
     }
 
     var isFeatured: Bool {
-        app.category?.lowercased() == "featured"
+        sourceURL?.lastPathComponent.lowercased() == "featuredapps.json"
     }
 
     var category: AppsCatalogCategory {
