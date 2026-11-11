@@ -112,6 +112,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
             app.developer
         ]
         .compactMap { $0 }
+        .joined(separator: " ")
         .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
         .lowercased()
 
