@@ -39,6 +39,10 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     case featured
     case games
     case emulators
+    case media
+    case productivity
+    case developerTools
+    case customization
     case jailbreak
     case signing
     case design
@@ -59,6 +63,10 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         case .featured: "المميز"
         case .games: "الألعاب"
         case .emulators: "المحاكيات"
+        case .media: "الوسائط والترفيه"
+        case .productivity: "الإنتاجية"
+        case .developerTools: "أدوات المطورين"
+        case .customization: "التخصيص والأدوات"
         case .jailbreak: "الجيلبريك"
         case .signing: "التوقيع والتثبيت"
         case .design: "التصميم"
@@ -79,6 +87,10 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         case .featured: "star.fill"
         case .games: "gamecontroller"
         case .emulators: "arcade.stick"
+        case .media: "play.rectangle"
+        case .productivity: "checklist"
+        case .developerTools: "hammer"
+        case .customization: "slider.horizontal.3"
         case .jailbreak: "wrench.and.screwdriver"
         case .signing: "signature"
         case .design: "paintpalette"
@@ -203,6 +215,14 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
             return .artificialIntelligence
         case "emulator", "emulators":
             return .emulators
+        case "developer", "development":
+            return .developerTools
+        case "entertainment", "music", "video", "media":
+            return .media
+        case "productivity", "business":
+            return .productivity
+        case "customization", "themes", "personalization":
+            return .customization
         case "jailbreak", "tweaks":
             return .jailbreak
         case "signing", "sideloading", "utilities-signing":
