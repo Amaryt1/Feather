@@ -1,0 +1,1 @@
+Regenerate compact three-feed offline catalog snapshot.
