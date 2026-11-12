@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,14 +24,38 @@ def fetch_repository(url: str) -> dict:
         headers={
             "User-Agent": "Feather-AppsCatalog/1.0",
             "Accept": "application/json",
+            "Accept-Encoding": "identity",
+            "Connection": "close",
         },
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        raw = response.read()
-    value = json.loads(raw.decode("utf-8-sig"))
-    if not isinstance(value, dict) or not isinstance(value.get("apps"), list):
-        raise ValueError("response is not an AltStore-compatible repository")
-    return value
+
+    last_error: Exception | None = None
+    for attempt in range(1, 6):
+        try:
+            chunks: list[bytes] = []
+            with urllib.request.urlopen(request, timeout=180) as response:
+                while True:
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            raw = b"".join(chunks)
+            value = json.loads(raw.decode("utf-8-sig"))
+            if not isinstance(value, dict) or not isinstance(value.get("apps"), list):
+                raise ValueError("response is not an AltStore-compatible repository")
+            print(f"Fetched {url}: {len(raw):,} bytes", flush=True)
+            return value
+        except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError, ValueError) as error:
+            last_error = error
+            print(
+                f"Attempt {attempt}/5 failed for {url}: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+            if attempt < 5:
+                time.sleep(min(4 * attempt, 20))
+
+    raise RuntimeError(f"could not fetch {url}: {last_error}")
 
 
 def main() -> None:
