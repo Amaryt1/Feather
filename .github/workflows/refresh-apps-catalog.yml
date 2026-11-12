@@ -37,7 +37,8 @@ jobs:
 
       - name: Commit catalog when changed
         run: |
-          if git diff --quiet -- Feather/Resources/AppsCatalogSeed.json; then
+          if git ls-files --error-unmatch Feather/Resources/AppsCatalogSeed.json >/dev/null 2>&1 \
+            && git diff --quiet -- Feather/Resources/AppsCatalogSeed.json; then
             echo "Bundled catalog is already up to date."
             exit 0
           fi
