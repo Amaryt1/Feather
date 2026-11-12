@@ -1,0 +1,47 @@
+name: Refresh bundled apps catalog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/build_apps_catalog.py"
+      - ".github/workflows/refresh-apps-catalog.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-apps-catalog
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Generate offline catalog from all configured feeds
+        run: python scripts/build_apps_catalog.py
+
+      - name: Commit catalog when changed
+        run: |
+          if git diff --quiet -- Feather/Resources/AppsCatalogSeed.json; then
+            echo "Bundled catalog is already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Feather/Resources/AppsCatalogSeed.json
+          git commit -m "Update bundled apps catalog snapshot"
+          git push
