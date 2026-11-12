@@ -404,31 +404,53 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
 
         if !appsArrayStarted {
             while searchIndex + Self.appsKey.count <= buffer.count {
-                let candidate = buffer[searchIndex..<(searchIndex + Self.appsKey.count)]
+                let keyStart = searchIndex
+                let candidate = buffer[keyStart..<(keyStart + Self.appsKey.count)]
                 if candidate.elementsEqual(Self.appsKey) {
-                    searchIndex += Self.appsKey.count
-                    while searchIndex < buffer.count,
-                          [UInt8(32), 9, 10, 13].contains(buffer[searchIndex]) {
-                        searchIndex += 1
+                    var lookahead = keyStart + Self.appsKey.count
+                    while lookahead < buffer.count,
+                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                        lookahead += 1
                     }
-                    if searchIndex < buffer.count, buffer[searchIndex] == 58 {
-                        searchIndex += 1
-                        while searchIndex < buffer.count,
-                              [UInt8(32), 9, 10, 13].contains(buffer[searchIndex]) {
-                            searchIndex += 1
-                        }
-                        if searchIndex < buffer.count, buffer[searchIndex] == 91 {
-                            buffer.removeFirst(searchIndex + 1)
-                            searchIndex = 0
-                            appsArrayStarted = true
-                            break
-                        }
+                    // The key may be split from its colon or opening bracket
+                    // across network chunks. Keep the key position for the next chunk.
+                    guard lookahead < buffer.count else {
+                        searchIndex = keyStart
+                        return
                     }
+                    guard buffer[lookahead] == 58 else {
+                        searchIndex = keyStart + 1
+                        continue
+                    }
+                    lookahead += 1
+                    while lookahead < buffer.count,
+                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                        lookahead += 1
+                    }
+                    guard lookahead < buffer.count else {
+                        searchIndex = keyStart
+                        return
+                    }
+                    if buffer[lookahead] == 91 {
+                        buffer.removeFirst(lookahead + 1)
+                        searchIndex = 0
+                        appsArrayStarted = true
+                        break
+                    }
+                    searchIndex = keyStart + 1
                 } else {
                     searchIndex += 1
                 }
             }
-            guard appsArrayStarted else { return }
+            guard appsArrayStarted else {
+                // Retain enough trailing bytes to recognize a key split at a chunk boundary.
+                if searchIndex > Self.appsKey.count {
+                    buffer.removeFirst(searchIndex - Self.appsKey.count)
+                    searchIndex = Self.appsKey.count
+                }
+                return
+            }
+        }
         }
 
         while !buffer.isEmpty {
