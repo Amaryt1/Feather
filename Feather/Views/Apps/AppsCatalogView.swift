@@ -264,6 +264,7 @@ struct AppsCatalogView: View {
     @State private var recentOnly = false
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isHistoryPresented = false
+    @State private var isDownloadsPresented = false
 
     // These feed URLs are intentionally private to the app and are never displayed as source entries.
     private let feedURLs: [URL] = [
@@ -394,6 +395,11 @@ struct AppsCatalogView: View {
             .refreshable { await loadRepositories(forceRefresh: true) }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { isDownloadsPresented = true } label: {
+                        Image(systemName: "arrow.down.circle")
+                    }
+                    .accessibilityLabel("مدير التحميلات")
+
                     Button { isHistoryPresented = true } label: {
                         Image(systemName: "clock.arrow.circlepath")
                     }
@@ -418,6 +424,9 @@ struct AppsCatalogView: View {
             }
             .sheet(isPresented: $isHistoryPresented) {
                 AppsCatalogHistoryView()
+            }
+            .sheet(isPresented: $isDownloadsPresented) {
+                AppsCatalogDownloadsView()
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
