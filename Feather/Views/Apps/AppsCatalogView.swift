@@ -124,18 +124,24 @@ private struct AppsCatalogIndex: Sendable {
     let categoryCounts: [AppsCatalogCategory: Int]
 
     static func build(from repositories: [SourceAppsView.SourceRepositoryContext]) -> AppsCatalogIndex {
-        var seen = Set<String>()
+        // Keep catalog entries from every configured source. Deduplicating by
+        // bundle identifier and display name here silently discarded valid
+        // source-specific builds (and every same-named app without a bundle ID).
+        // The stable entry identity already includes the source URL, so identical
+        // apps offered by different repositories remain independently available.
+        var seenEntryIDs = Set<String>()
         var entries: [AppsCatalogEntry] = []
         entries.reserveCapacity(repositories.reduce(0) { $0 + $1.repository.apps.count })
         for context in repositories {
             for app in context.repository.apps {
-                let name = app.currentName
-                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                guard seen.insert("\(bundle)|\(name)").inserted else { continue }
-                entries.append(.init(sourceURL: context.sourceURL, source: context.repository,
-                                     app: app, category: AppsCatalogCategory.classify(app)))
+                let entry = AppsCatalogEntry(
+                    sourceURL: context.sourceURL,
+                    source: context.repository,
+                    app: app,
+                    category: AppsCatalogCategory.classify(app)
+                )
+                guard seenEntryIDs.insert(entry.id).inserted else { continue }
+                entries.append(entry)
             }
         }
         entries.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
