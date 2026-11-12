@@ -340,6 +340,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
     private var searchIndex = 0
     private var appsArrayStarted = false
     private var appsArrayFinished = false
+    private var repositoryPrefix = Data()
 
     private static let appsKey = Array("\"apps\"".utf8)
 
@@ -432,6 +433,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                         return
                     }
                     if buffer[lookahead] == 91 {
+                        repositoryPrefix = Data(buffer[..<keyStart])
                         buffer.removeFirst(lookahead + 1)
                         searchIndex = 0
                         appsArrayStarted = true
@@ -507,7 +509,8 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
 
             // A one-app repository keeps the existing app detail and download
             // components working while the rest of the feed is still arriving.
-            var repositoryData = Data("{\"apps\":[".utf8)
+            var repositoryData = repositoryPrefix
+            repositoryData.append(Data("\"apps\":[".utf8))
             repositoryData.append(appData)
             repositoryData.append(Data("]}".utf8))
 
