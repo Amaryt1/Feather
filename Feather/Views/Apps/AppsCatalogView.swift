@@ -271,7 +271,10 @@ struct AppsCatalogView: View {
     private let feedURLs: [URL] = [
         URL(string: "https://fastsign.dev/repo.json")!,
         URL(string: "https://repository.apptesters.org")!,
-        URL(string: "https://ipa.cypwn.xyz/cypwn.json")!
+        URL(string: "https://ipa.cypwn.xyz/cypwn.json")!,
+        URL(string: "https://raw.githubusercontent.com/Nyasami/Ksign/refs/heads/main/repo.json")!,
+        URL(string: "https://community-apps.sidestore.io/sidecommunity.json")!,
+        URL(string: "https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json")!
     ]
 
     // Build the catalog index once when repositories change. Rebuilding this
