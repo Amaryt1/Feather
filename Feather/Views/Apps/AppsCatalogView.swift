@@ -104,6 +104,43 @@ private struct AppsCatalogEntry: Identifiable {
     var category: AppsCatalogCategory { AppsCatalogCategory.classify(app) }
 }
 
+private enum AppsCatalogCache {
+    private static func fileURL(for url: URL) -> URL? {
+        guard let cachesDirectory = FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        ).first else { return nil }
+
+        let hash = url.absoluteString.utf8.reduce(UInt64(14695981039346656037)) {
+            ($0 ^ UInt64($1)) &* 1099511628211
+        }
+        return cachesDirectory
+            .appendingPathComponent("AppsCatalog", isDirectory: true)
+            .appendingPathComponent(String(format: "%016llx.json", hash))
+    }
+
+    static func load(for url: URL) -> ASRepository? {
+        guard let fileURL = fileURL(for: url),
+              let data = try? Data(contentsOf: fileURL) else { return nil }
+        return try? JSONDecoder().decode(ASRepository.self, from: data)
+    }
+
+    static func save(_ data: Data, for url: URL) {
+        guard let fileURL = fileURL(for: url),
+              (try? JSONDecoder().decode(ASRepository.self, from: data)) != nil else { return }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            // Caching is an optimization; a cache write failure must not stop loading.
+        }
+    }
+}
+
 struct AppsCatalogView: View {
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
     @State private var selectedCategory: AppsCatalogCategory = .all
@@ -194,13 +231,13 @@ struct AppsCatalogView: View {
                 }
             }
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
-            .refreshable { await loadRepositories() }
+            .refreshable { await loadRepositories(forceRefresh: true) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if isLoading {
                         ProgressView()
                     } else {
-                        Button { Task { await loadRepositories() } } label: {
+                        Button { Task { await loadRepositories(forceRefresh: true) } } label: {
                             Image(systemName: "arrow.clockwise")
                         }
                         .accessibilityLabel("تحديث التطبيقات")
@@ -289,27 +326,61 @@ struct AppsCatalogView: View {
     }
 
     @MainActor
-    private func loadRepositories() async {
+    private func loadRepositories(forceRefresh: Bool = false) async {
         guard !isLoading else { return }
         isLoading = true
         hadFailures = false
-        repositories.removeAll()
         defer { isLoading = false }
 
-        // Each repository is streamed independently. Every decoded app is published
-        // immediately instead of waiting for the complete repositories to download.
-        await withTaskGroup(of: Bool.self) { group in
+        // On normal entry, restore complete repositories from disk first.
+        // Only sources without a valid local copy need a network request.
+        let urlsToLoad: [URL]
+        if forceRefresh {
+            urlsToLoad = feedURLs
+        } else {
+            var missingURLs: [URL] = []
             for url in feedURLs {
+                if let cachedRepository = AppsCatalogCache.load(for: url) {
+                    repositories.removeAll { $0.sourceURL == url }
+                    repositories.append(
+                        SourceAppsView.SourceRepositoryContext(
+                            sourceURL: url,
+                            repository: cachedRepository
+                        )
+                    )
+                } else {
+                    missingURLs.append(url)
+                }
+            }
+
+            // All feeds are already cached: show the full catalog immediately.
+            if missingURLs.isEmpty { return }
+            urlsToLoad = missingURLs
+        }
+
+        // Refresh feeds concurrently. Keep the last complete cached catalog visible
+        // until each refreshed feed has finished successfully.
+        await withTaskGroup(of: Bool.self) { group in
+            for url in urlsToLoad {
                 group.addTask {
                     do {
+                        var fetchedContexts: [SourceAppsView.SourceRepositoryContext] = []
+
                         for try await partialRepository in AppsCatalogStreamingLoader.stream(from: url) {
+                            let context = SourceAppsView.SourceRepositoryContext(
+                                sourceURL: url,
+                                repository: partialRepository
+                            )
+                            fetchedContexts.append(context)
+
                             await MainActor.run {
-                                let context = SourceAppsView.SourceRepositoryContext(
-                                    sourceURL: url,
-                                    repository: partialRepository
-                                )
                                 repositories.append(context)
                             }
+                        }
+
+                        await MainActor.run {
+                            repositories.removeAll { $0.sourceURL == url }
+                            repositories.append(contentsOf: fetchedContexts)
                         }
                         return true
                     } catch {
@@ -342,6 +413,8 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
     private var appsArrayStarted = false
     private var appsArrayFinished = false
     private var repositoryPrefix = Data()
+    private var downloadedData = Data()
+    private var sourceURL: URL?
 
     // Persist the JSON scanner state across network callbacks. Large app objects
     // are therefore scanned only once, rather than from their first byte per chunk.
@@ -361,6 +434,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
         AsyncThrowingStream { continuation in
             let loader = AppsCatalogStreamingLoader()
             loader.continuation = continuation
+            loader.sourceURL = url
 
             let delegateQueue = OperationQueue()
             delegateQueue.maxConcurrentOperationCount = 1
@@ -396,6 +470,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        downloadedData.append(data)
         buffer.append(contentsOf: data)
         consumeAvailableApps()
     }
@@ -410,6 +485,9 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
         } else if !appsArrayStarted || !appsArrayFinished {
             continuation?.finish(throwing: URLError(.cannotParseResponse))
         } else {
+            if let sourceURL {
+                AppsCatalogCache.save(downloadedData, for: sourceURL)
+            }
             continuation?.finish()
         }
         session.finishTasksAndInvalidate()
