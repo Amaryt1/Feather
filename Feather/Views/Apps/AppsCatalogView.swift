@@ -231,20 +231,27 @@ struct AppsCatalogView: View {
         URL(string: "https://ipa.cypwn.xyz/cypwn.json")!
     ]
 
-    private var entries: [AppsCatalogEntry] {
+    // Build the catalog index once when repositories change. Rebuilding this
+    // 27k-app index from body-computed properties made every category redraw
+    // repeatedly scan the entire catalog.
+    @State private var catalogEntries: [AppsCatalogEntry] = []
+
+    private var entries: [AppsCatalogEntry] { catalogEntries }
+
+    private func rebuildEntries() {
         var seen = Set<String>()
-        return repositories.flatMap { context in
+        catalogEntries = repositories.flatMap { context in
             context.repository.apps.compactMap { app in
                 let name = app.currentName
                     .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                // Keep separately named variants even when they share a bundle identifier.
                 let key = "\(bundle)|\(name)"
                 guard seen.insert(key).inserted else { return nil }
                 return AppsCatalogEntry(sourceURL: context.sourceURL, source: context.repository, app: app)
             }
         }
+        .sorted { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
     }
 
     private var visibleCategories: [AppsCatalogCategory] {
@@ -258,7 +265,6 @@ struct AppsCatalogView: View {
                               entry.app.developer ?? ""].joined(separator: " ")
             return categoryMatches && (searchText.isEmpty || searchable.localizedCaseInsensitiveContains(searchText))
         }
-        .sorted { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
     }
 
     var body: some View {
@@ -331,6 +337,7 @@ struct AppsCatalogView: View {
             let bundledRepositories = await AppsCatalogBundledSeed.load()
             if !bundledRepositories.isEmpty {
                 repositories = bundledRepositories
+                rebuildEntries()
                 hasLoaded = true
                 isLoading = false
                 return
@@ -442,6 +449,9 @@ struct AppsCatalogView: View {
                 }
             }
 
+            // Publish one prebuilt index after restoring all cached feeds.
+            rebuildEntries()
+
             // All feeds are already cached: show the full catalog immediately.
             if missingURLs.isEmpty { return }
             urlsToLoad = missingURLs
@@ -466,6 +476,7 @@ struct AppsCatalogView: View {
                         await MainActor.run {
                             repositories.removeAll { $0.sourceURL == url }
                             repositories.append(contentsOf: fetchedContexts)
+                            rebuildEntries()
                         }
                         return true
                     } catch {
