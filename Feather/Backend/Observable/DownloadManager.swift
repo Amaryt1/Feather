@@ -15,6 +15,7 @@ class Download: Identifiable, @unchecked Sendable {
 	@Published var bytesDownloaded: Int64 = 0
 	@Published var totalBytes: Int64 = 0
 	@Published var unpackageProgress: Double = 0.0
+    @Published var isPaused: Bool = false
 	
 	var overallProgress: Double {
 		onlyArchiving
@@ -91,6 +92,7 @@ class DownloadManager: NSObject, ObservableObject {
 		
 		let task = _session.downloadTask(with: url)
 		download.task = task
+        download.isPaused = false
 		task.resume()
 		
 		downloads.append(download)
@@ -120,18 +122,32 @@ class DownloadManager: NSObject, ObservableObject {
 		return download
 	}
 	
+	func pauseDownload(_ download: Download) {
+        guard let task = download.task, !download.isPaused else { return }
+        task.cancel(byProducingResumeData: { resumeData in
+            DispatchQueue.main.async {
+                download.resumeData = resumeData
+                download.task = nil
+                download.isPaused = true
+            }
+        })
+    }
+
 	func resumeDownload(_ download: Download) {
 		if let resumeData = download.resumeData {
 			let task = _session.downloadTask(withResumeData: resumeData)
 			download.task = task
+            download.resumeData = nil
+            download.isPaused = false
 			task.resume()
 			
 			#if !targetEnvironment(macCatalyst)
 			_updateBackgroundAudioState()
 			#endif
-		} else if let url = download.task?.originalRequest?.url {
-			let task = _session.downloadTask(with: url)
+		} else {
+			let task = _session.downloadTask(with: download.url)
 			download.task = task
+            download.isPaused = false
 			task.resume()
 			
 			#if !targetEnvironment(macCatalyst)
