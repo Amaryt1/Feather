@@ -1,1 +1,0 @@
-Run the catalog snapshot generator after workflow push-race fix.
