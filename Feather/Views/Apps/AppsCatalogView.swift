@@ -107,7 +107,7 @@ private struct AppsCatalogEntry: Identifiable {
 private enum AppsCatalogCache {
     private static func fileURL(for url: URL) -> URL? {
         guard let cachesDirectory = FileManager.default.urls(
-            for: .cachesDirectory,
+            for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first else { return nil }
 
