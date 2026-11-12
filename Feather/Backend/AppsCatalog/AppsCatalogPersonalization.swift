@@ -290,7 +290,7 @@ private struct AppsCatalogDownloadRow: View {
 
 
 struct AppsCatalogSourcesStatusView: View {
-    let onRefresh: (URL) async -> Void
+    let onRefresh: @MainActor (URL) async -> Void
     @State private var refreshingSource: String?
 
     private let feeds: [(name: String, url: URL)] = [
