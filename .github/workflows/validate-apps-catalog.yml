@@ -1,0 +1,46 @@
+name: Validate bundled apps catalog
+
+on:
+  pull_request:
+    paths:
+      - "scripts/build_apps_catalog.py"
+      - "Feather/Views/Apps/AppsCatalogView.swift"
+      - ".github/workflows/refresh-apps-catalog.yml"
+      - ".github/workflows/validate-apps-catalog.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository and local packages
+        uses: actions/checkout@v4
+        with:
+          submodules: "true"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate catalog generator syntax
+        run: python -m py_compile scripts/build_apps_catalog.py
+
+      - name: Generate and validate bundled catalog
+        run: python scripts/build_apps_catalog.py
+
+      - name: Build Feather for iOS
+        run: |
+          xcodebuild \
+            -project Feather.xcodeproj \
+            -scheme Feather \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/FeatherDerivedData" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build
