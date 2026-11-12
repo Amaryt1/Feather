@@ -8,7 +8,7 @@ on:
     branches:
       - main
     paths:
-      - "scripts/build_apps_catalog.py"
+      - "scripts/**"
       - ".github/workflows/refresh-apps-catalog.yml"
 
 permissions:
