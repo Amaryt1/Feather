@@ -451,7 +451,6 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                 return
             }
         }
-        }
 
         while !buffer.isEmpty {
             while !buffer.isEmpty,
