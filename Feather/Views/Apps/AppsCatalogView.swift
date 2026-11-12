@@ -324,17 +324,23 @@ struct AppsCatalogView: View {
         }
         .task {
             guard !hasLoaded else { return }
-            hasLoaded = true
 
-            // A bundled snapshot is available before any network request, including
-            // on a fresh install with no internet connection.
+            // Keep the loading state visible while the bundled snapshot is decoded.
+            // The complete bundled catalog is the first screen; do not immediately
+            // replace it with a slow, incremental network stream on every entry.
             let bundledRepositories = await AppsCatalogBundledSeed.load()
             if !bundledRepositories.isEmpty {
                 repositories = bundledRepositories
-                await loadRepositories(forceRefresh: true)
-            } else {
-                await loadRepositories()
+                hasLoaded = true
+                isLoading = false
+                return
             }
+
+            // Older installs without a bundled snapshot fall back to disk cache
+            // and then to the network.
+            hasLoaded = true
+            isLoading = false
+            await loadRepositories()
         }
     }
 
@@ -455,10 +461,6 @@ struct AppsCatalogView: View {
                                 repository: partialRepository
                             )
                             fetchedContexts.append(context)
-
-                            await MainActor.run {
-                                repositories.append(context)
-                            }
                         }
 
                         await MainActor.run {
