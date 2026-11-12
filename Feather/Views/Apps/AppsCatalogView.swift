@@ -152,24 +152,41 @@ private enum AppsCatalogBundledSeed {
             return []
         }
 
-        // Decode entries independently: one malformed feed item must not hide
-        // every other valid app in the bundled snapshot.
-        return items.compactMap { item in
+        var contexts: [SourceAppsView.SourceRepositoryContext] = []
+
+        // Keep the bundled file compact by storing each source's metadata once.
+        // Decode apps independently so one malformed entry cannot discard a feed.
+        for item in items {
             guard
                 let sourceString = item["sourceURL"] as? String,
                 let sourceURL = URL(string: sourceString),
-                let repositoryObject = item["repository"],
-                let repositoryData = try? JSONSerialization.data(withJSONObject: repositoryObject),
-                let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData)
+                var repositoryObject = item["repository"] as? [String: Any],
+                let apps = repositoryObject.removeValue(forKey: "apps") as? [[String: Any]]
             else {
-                return nil
+                continue
             }
 
-            return SourceAppsView.SourceRepositoryContext(
-                sourceURL: sourceURL,
-                repository: repository
-            )
+            for appObject in apps {
+                var singleAppRepository = repositoryObject
+                singleAppRepository["apps"] = [appObject]
+
+                guard
+                    let repositoryData = try? JSONSerialization.data(withJSONObject: singleAppRepository),
+                    let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData)
+                else {
+                    continue
+                }
+
+                contexts.append(
+                    SourceAppsView.SourceRepositoryContext(
+                        sourceURL: sourceURL,
+                        repository: repository
+                    )
+                )
+            }
         }
+
+        return contexts
     }
 }
 
