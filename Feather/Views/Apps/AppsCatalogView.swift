@@ -104,6 +104,43 @@ private struct AppsCatalogEntry: Identifiable {
     var category: AppsCatalogCategory { AppsCatalogCategory.classify(app) }
 }
 
+private enum AppsCatalogCache {
+    private static func fileURL(for url: URL) -> URL? {
+        guard let cachesDirectory = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else { return nil }
+
+        let hash = url.absoluteString.utf8.reduce(UInt64(14695981039346656037)) {
+            ($0 ^ UInt64($1)) &* 1099511628211
+        }
+        return cachesDirectory
+            .appendingPathComponent("AppsCatalog", isDirectory: true)
+            .appendingPathComponent(String(format: "%016llx.json", hash))
+    }
+
+    static func load(for url: URL) -> ASRepository? {
+        guard let fileURL = fileURL(for: url),
+              let data = try? Data(contentsOf: fileURL) else { return nil }
+        return try? JSONDecoder().decode(ASRepository.self, from: data)
+    }
+
+    static func save(_ data: Data, for url: URL) {
+        guard let fileURL = fileURL(for: url),
+              (try? JSONDecoder().decode(ASRepository.self, from: data)) != nil else { return }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            // Caching is an optimization; a cache write failure must not stop loading.
+        }
+    }
+}
+
 struct AppsCatalogView: View {
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
     @State private var selectedCategory: AppsCatalogCategory = .all
@@ -194,13 +231,13 @@ struct AppsCatalogView: View {
                 }
             }
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
-            .refreshable { await loadRepositories() }
+            .refreshable { await loadRepositories(forceRefresh: true) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if isLoading {
                         ProgressView()
                     } else {
-                        Button { Task { await loadRepositories() } } label: {
+                        Button { Task { await loadRepositories(forceRefresh: true) } } label: {
                             Image(systemName: "arrow.clockwise")
                         }
                         .accessibilityLabel("تحديث التطبيقات")
@@ -289,27 +326,61 @@ struct AppsCatalogView: View {
     }
 
     @MainActor
-    private func loadRepositories() async {
+    private func loadRepositories(forceRefresh: Bool = false) async {
         guard !isLoading else { return }
         isLoading = true
         hadFailures = false
-        repositories.removeAll()
         defer { isLoading = false }
 
-        // Each repository is streamed independently. Every decoded app is published
-        // immediately instead of waiting for the complete repositories to download.
-        await withTaskGroup(of: Bool.self) { group in
+        // On normal entry, restore complete repositories from disk first.
+        // Only sources without a valid local copy need a network request.
+        let urlsToLoad: [URL]
+        if forceRefresh {
+            urlsToLoad = feedURLs
+        } else {
+            var missingURLs: [URL] = []
             for url in feedURLs {
+                if let cachedRepository = AppsCatalogCache.load(for: url) {
+                    repositories.removeAll { $0.sourceURL == url }
+                    repositories.append(
+                        SourceAppsView.SourceRepositoryContext(
+                            sourceURL: url,
+                            repository: cachedRepository
+                        )
+                    )
+                } else {
+                    missingURLs.append(url)
+                }
+            }
+
+            // All feeds are already cached: show the full catalog immediately.
+            if missingURLs.isEmpty { return }
+            urlsToLoad = missingURLs
+        }
+
+        // Refresh feeds concurrently. Keep the last complete cached catalog visible
+        // until each refreshed feed has finished successfully.
+        await withTaskGroup(of: Bool.self) { group in
+            for url in urlsToLoad {
                 group.addTask {
                     do {
+                        var fetchedContexts: [SourceAppsView.SourceRepositoryContext] = []
+
                         for try await partialRepository in AppsCatalogStreamingLoader.stream(from: url) {
+                            let context = SourceAppsView.SourceRepositoryContext(
+                                sourceURL: url,
+                                repository: partialRepository
+                            )
+                            fetchedContexts.append(context)
+
                             await MainActor.run {
-                                let context = SourceAppsView.SourceRepositoryContext(
-                                    sourceURL: url,
-                                    repository: partialRepository
-                                )
                                 repositories.append(context)
                             }
+                        }
+
+                        await MainActor.run {
+                            repositories.removeAll { $0.sourceURL == url }
+                            repositories.append(contentsOf: fetchedContexts)
                         }
                         return true
                     } catch {
@@ -338,21 +409,39 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
     private var task: URLSessionDataTask?
     private var buffer: [UInt8] = []
     private var searchIndex = 0
+    private var readIndex = 0
     private var appsArrayStarted = false
     private var appsArrayFinished = false
     private var repositoryPrefix = Data()
+    private var downloadedData = Data()
+    private var sourceURL: URL?
+
+    // Persist the JSON scanner state across network callbacks. Large app objects
+    // are therefore scanned only once, rather than from their first byte per chunk.
+    private var objectStartIndex: Int?
+    private var objectScanIndex = 0
+    private var objectDepth = 0
+    private var objectInString = false
+    private var objectEscaped = false
+
+    // URLSession invokes this loader on one serial delegate queue.
+    private let decoder = JSONDecoder()
 
     private static let appsKey = Array("\"apps\"".utf8)
+    private static let whitespace: Set<UInt8> = [32, 9, 10, 13]
 
     static func stream(from url: URL) -> AsyncThrowingStream<ASRepository, Error> {
         AsyncThrowingStream { continuation in
             let loader = AppsCatalogStreamingLoader()
             loader.continuation = continuation
+            loader.sourceURL = url
 
+            let delegateQueue = OperationQueue()
+            delegateQueue.maxConcurrentOperationCount = 1
             let session = URLSession(
                 configuration: .default,
                 delegate: loader,
-                delegateQueue: OperationQueue()
+                delegateQueue: delegateQueue
             )
             loader.session = session
             let task = session.dataTask(with: url)
@@ -381,6 +470,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        downloadedData.append(data)
         buffer.append(contentsOf: data)
         consumeAvailableApps()
     }
@@ -395,6 +485,9 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
         } else if !appsArrayStarted || !appsArrayFinished {
             continuation?.finish(throwing: URLError(.cannotParseResponse))
         } else {
+            if let sourceURL {
+                AppsCatalogCache.save(downloadedData, for: sourceURL)
+            }
             continuation?.finish()
         }
         session.finishTasksAndInvalidate()
@@ -410,7 +503,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                 if candidate.elementsEqual(Self.appsKey) {
                     var lookahead = keyStart + Self.appsKey.count
                     while lookahead < buffer.count,
-                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                          Self.whitespace.contains(buffer[lookahead]) {
                         lookahead += 1
                     }
                     // The key may be split from its colon or opening bracket
@@ -425,7 +518,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                     }
                     lookahead += 1
                     while lookahead < buffer.count,
-                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                          Self.whitespace.contains(buffer[lookahead]) {
                         lookahead += 1
                     }
                     guard lookahead < buffer.count else {
@@ -441,7 +534,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                             continue
                         }
                         repositoryPrefix = candidatePrefix
-                        buffer.removeFirst(lookahead + 1)
+                        readIndex = lookahead + 1
                         searchIndex = 0
                         appsArrayStarted = true
                         break
@@ -454,65 +547,83 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
             guard appsArrayStarted else {
                 // Retain enough trailing bytes to recognize a key split at a chunk boundary.
                 if searchIndex > Self.appsKey.count {
-                    buffer.removeFirst(searchIndex - Self.appsKey.count)
+                    let discardCount = searchIndex - Self.appsKey.count
+                    buffer.removeFirst(discardCount)
                     searchIndex = Self.appsKey.count
                 }
                 return
             }
         }
 
-        while !buffer.isEmpty {
-            while !buffer.isEmpty,
-                  [UInt8(32), 9, 10, 13, 44].contains(buffer[0]) {
-                buffer.removeFirst()
+        while readIndex < buffer.count {
+            while readIndex < buffer.count,
+                  Self.whitespace.contains(buffer[readIndex]) || buffer[readIndex] == 44 {
+                readIndex += 1
             }
-            guard let first = buffer.first else { return }
+            guard readIndex < buffer.count else { return }
 
-            if first == 93 {
+            if buffer[readIndex] == 93 {
                 appsArrayFinished = true
-                buffer.removeFirst()
+                readIndex += 1
                 return
             }
 
-            guard first == 123 else {
+            guard buffer[readIndex] == 123 else {
                 // Ignore unexpected separators while remaining inside the apps array.
-                buffer.removeFirst()
+                readIndex += 1
                 continue
             }
 
-            var depth = 0
-            var inString = false
-            var escaped = false
-            var endIndex: Int?
+            if objectStartIndex == nil {
+                objectStartIndex = readIndex
+                objectScanIndex = readIndex
+                objectDepth = 0
+                objectInString = false
+                objectEscaped = false
+            }
 
-            for index in buffer.indices {
-                let byte = buffer[index]
-                if inString {
-                    if escaped {
-                        escaped = false
+            guard let objectStart = objectStartIndex else { return }
+            var completedEnd: Int?
+
+            while objectScanIndex < buffer.count {
+                let byte = buffer[objectScanIndex]
+                if objectInString {
+                    if objectEscaped {
+                        objectEscaped = false
                     } else if byte == 92 {
-                        escaped = true
+                        objectEscaped = true
                     } else if byte == 34 {
-                        inString = false
+                        objectInString = false
                     }
                 } else {
                     if byte == 34 {
-                        inString = true
+                        objectInString = true
                     } else if byte == 123 {
-                        depth += 1
+                        objectDepth += 1
                     } else if byte == 125 {
-                        depth -= 1
-                        if depth == 0 {
-                            endIndex = index
+                        objectDepth -= 1
+                        if objectDepth == 0 {
+                            completedEnd = objectScanIndex
+                            objectScanIndex += 1
                             break
                         }
                     }
                 }
+                objectScanIndex += 1
             }
 
-            guard let endIndex else { return }
-            let appData = Data(buffer[0...endIndex])
-            buffer.removeFirst(endIndex + 1)
+            guard let endIndex = completedEnd else {
+                // Resume at the first unseen byte when the next network chunk arrives.
+                return
+            }
+
+            let appData = Data(buffer[objectStart...endIndex])
+            readIndex = endIndex + 1
+            objectStartIndex = nil
+            objectScanIndex = 0
+            objectDepth = 0
+            objectInString = false
+            objectEscaped = false
 
             // A one-app repository keeps the existing app detail and download
             // components working while the rest of the feed is still arriving.
@@ -521,9 +632,24 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
             repositoryData.append(appData)
             repositoryData.append(Data("]}".utf8))
 
-            if let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData) {
+            if let repository = try? decoder.decode(ASRepository.self, from: repositoryData) {
                 continuation?.yield(repository)
             }
+
+            compactBufferIfNeeded()
         }
+    }
+
+    /// Avoid repeated Array.removeFirst calls while consuming individual apps.
+    /// Compact occasionally, and only between complete JSON objects.
+    private func compactBufferIfNeeded() {
+        guard objectStartIndex == nil,
+              readIndex >= 65_536,
+              readIndex * 2 >= buffer.count else { return }
+
+        let discarded = readIndex
+        buffer.removeFirst(discarded)
+        readIndex = 0
+        searchIndex = max(0, searchIndex - discarded)
     }
 }
