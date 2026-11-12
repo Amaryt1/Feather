@@ -504,7 +504,6 @@ struct AppsCatalogView: View {
                             repositories.removeAll { $0.sourceURL == url }
                             repositories.append(contentsOf: fetchedContexts)
                         }
-                        await rebuildEntries()
                         return true
                     } catch {
                         return false
@@ -518,6 +517,10 @@ struct AppsCatalogView: View {
                 }
             }
         }
+
+        // Rebuild once after all feed tasks finish, avoiding overlapping full
+        // catalog indexes while concurrent refreshes complete.
+        await rebuildEntries()
     }
 }
 
