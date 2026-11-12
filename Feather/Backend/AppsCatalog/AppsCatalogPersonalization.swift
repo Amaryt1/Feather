@@ -290,6 +290,9 @@ private struct AppsCatalogDownloadRow: View {
 
 
 struct AppsCatalogSourcesStatusView: View {
+    let onRefresh: (URL) async -> Void
+    @State private var refreshingSource: String?
+
     private let feeds: [(name: String, url: URL)] = [
         ("FastSign", URL(string: "https://fastsign.dev/repo.json")!),
         ("AppTesters", URL(string: "https://repository.apptesters.org")!),
@@ -318,6 +321,22 @@ struct AppsCatalogSourcesStatusView: View {
                             Text(feed.url.host ?? "")
                                 .font(.caption2).foregroundStyle(.tertiary)
                                 .lineLimit(1)
+                            Button {
+                                Task {
+                                    refreshingSource = feed.name
+                                    await onRefresh(feed.url)
+                                    await checkSources()
+                                    refreshingSource = nil
+                                }
+                            } label: {
+                                if refreshingSource == feed.name {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                            }
+                            .disabled(refreshingSource != nil || checking)
+                            .accessibilityLabel("تحديث مصدر \(feed.name)")
                         }
                         .padding(.vertical, 3)
                     }
