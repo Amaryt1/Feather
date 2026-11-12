@@ -2,6 +2,7 @@
 """Build the offline Apps Catalog snapshot consumed by Feather."""
 from __future__ import annotations
 
+import gzip
 import json
 import sys
 import time
@@ -16,6 +17,7 @@ FEEDS = (
     "https://ipa.cypwn.xyz/cypwn.json",
 )
 OUTPUT = Path("Feather/Resources/AppsCatalogSeed.json")
+OUTPUT_GZIP = Path("Feather/Resources/AppsCatalogSeed.json.gz")
 
 
 def fetch_repository(url: str) -> dict:
@@ -107,18 +109,22 @@ def main() -> None:
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "sources": bundled_sources,
     }
-    temporary = OUTPUT.with_suffix(".json.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(OUTPUT)
+    serialized = json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+
+    temporary = OUTPUT_GZIP.with_suffix(".gz.tmp")
+    temporary.write_bytes(gzip.compress(serialized, compresslevel=9, mtime=0))
+    temporary.replace(OUTPUT_GZIP)
+    OUTPUT.unlink(missing_ok=True)
 
     print("Bundled app counts:")
     for feed, count in source_counts.items():
         print(f"- {feed}: {count}")
     print(f"Total bundled apps: {sum(source_counts.values())}")
-    print(f"Output: {OUTPUT}")
+    print(f"Uncompressed catalog size: {len(serialized):,} bytes")
+    print(f"Compressed catalog size: {OUTPUT_GZIP.stat().st_size:,} bytes")
+    print(f"Output: {OUTPUT_GZIP}")
 
 
 if __name__ == "__main__":
