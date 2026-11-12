@@ -100,9 +100,9 @@ private struct AppsCatalogEntry: Identifiable {
     let sourceURL: URL?
     let source: ASRepository
     let app: ASRepository.App
+    let category: AppsCatalogCategory
 
     var id: String { "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)" }
-    var category: AppsCatalogCategory { AppsCatalogCategory.classify(app) }
 }
 
 private enum AppsCatalogCache {
@@ -235,6 +235,7 @@ struct AppsCatalogView: View {
     // 27k-app index from body-computed properties made every category redraw
     // repeatedly scan the entire catalog.
     @State private var catalogEntries: [AppsCatalogEntry] = []
+    @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
 
@@ -248,10 +249,24 @@ struct AppsCatalogView: View {
                 let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 let key = "\(bundle)|\(name)"
                 guard seen.insert(key).inserted else { return nil }
-                return AppsCatalogEntry(sourceURL: context.sourceURL, source: context.repository, app: app)
+                return AppsCatalogEntry(
+                    sourceURL: context.sourceURL,
+                    source: context.repository,
+                    app: app,
+                    category: AppsCatalogCategory.classify(app)
+                )
             }
         }
         .sorted { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
+
+        // Category classification is relatively expensive. Calculate each app's
+        // category once while building the index, then keep counts ready so
+        // rendering the category picker never rescans the entire catalog.
+        var counts: [AppsCatalogCategory: Int] = [:]
+        for entry in catalogEntries {
+            counts[entry.category, default: 0] += 1
+        }
+        categoryCounts = counts
     }
 
     private var visibleCategories: [AppsCatalogCategory] {
@@ -375,7 +390,7 @@ struct AppsCatalogView: View {
     }
 
     private func categoryCount(_ category: AppsCatalogCategory) -> Int {
-        category == .all ? entries.count : entries.filter { $0.category == category }.count
+        category == .all ? entries.count : categoryCounts[category, default: 0]
     }
 
     @ViewBuilder
