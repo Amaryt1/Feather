@@ -96,6 +96,19 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+private enum AppsCatalogSort: String, CaseIterable {
+    case recommended, name, newest, largest
+
+    var title: String {
+        switch self {
+        case .recommended: "مقترح"
+        case .name: "الاسم"
+        case .newest: "الأحدث"
+        case .largest: "الأكبر حجماً"
+        }
+    }
+}
+
 private struct AppsCatalogEntry: Identifiable, Sendable {
     let sourceURL: URL?
     let source: ASRepository
@@ -246,6 +259,11 @@ struct AppsCatalogView: View {
     @State private var isLoading = true
     @State private var hasLoaded = false
     @State private var hadFailures = false
+    @StateObject private var personalization = AppsCatalogPersonalization.shared
+    @State private var favoritesOnly = false
+    @State private var recentOnly = false
+    @State private var sortOption: AppsCatalogSort = .recommended
+    @State private var isHistoryPresented = false
 
     // These feed URLs are intentionally private to the app and are never displayed as source entries.
     private let feedURLs: [URL] = [
@@ -268,6 +286,9 @@ struct AppsCatalogView: View {
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
+        personalization.checkForUpdates(in: index.entries.map {
+            AppsCatalogEntrySnapshot(id: $0.id, name: $0.app.currentName, version: $0.app.currentVersion)
+        })
     }
 
     @MainActor
@@ -279,6 +300,9 @@ struct AppsCatalogView: View {
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
+        personalization.checkForUpdates(in: index.entries.map {
+            AppsCatalogEntrySnapshot(id: $0.id, name: $0.app.currentName, version: $0.app.currentVersion)
+        })
     }
 
     private var visibleCategories: [AppsCatalogCategory] {
@@ -287,18 +311,46 @@ struct AppsCatalogView: View {
 
     private var filteredEntries: [AppsCatalogEntry] {
         let selectedEntries = selectedCategory == .all ? entries : entriesByCategory[selectedCategory, default: []]
-        guard !searchText.isEmpty else { return selectedEntries }
-        return selectedEntries.filter { entry in
-            entry.app.currentName.localizedCaseInsensitiveContains(searchText)
-                || (entry.app.currentDescription?.localizedCaseInsensitiveContains(searchText) ?? false)
-                || (entry.app.developer?.localizedCaseInsensitiveContains(searchText) ?? false)
+        var result = selectedEntries
+
+        if favoritesOnly {
+            result = result.filter { personalization.isFavorite($0.id) }
         }
+        if recentOnly {
+            let recentOrder = Dictionary(uniqueKeysWithValues: personalization.recentIDs.enumerated().map { ($1, $0) })
+            result = result.filter { recentOrder[$0.id] != nil }
+            result.sort { (recentOrder[$0.id] ?? .max) < (recentOrder[$1.id] ?? .max) }
+        }
+        if !searchText.isEmpty {
+            result = result.filter { entry in
+                entry.app.currentName.localizedCaseInsensitiveContains(searchText)
+                    || (entry.app.currentDescription?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || (entry.app.developer?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
+        }
+        switch sortOption {
+        case .recommended:
+            if let recentID = personalization.recentIDs.first,
+               let recentCategory = entries.first(where: { $0.id == recentID })?.category {
+                result.sort {
+                    ($0.category == recentCategory ? 0 : 1) < ($1.category == recentCategory ? 0 : 1)
+                }
+            }
+        case .name:
+            result.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
+        case .newest:
+            result.sort { ($0.app.currentDate?.date ?? .distantPast) > ($1.app.currentDate?.date ?? .distantPast) }
+        case .largest:
+            result.sort { ($0.app.size ?? 0) > ($1.app.size ?? 0) }
+        }
+        return result
     }
 
     var body: some View {
         NBNavigationView("التطبيقات") {
             VStack(spacing: 0) {
                 categoryPicker
+                catalogControls
 
                 if hadFailures && !repositories.isEmpty {
                     Label("تم تحميل بعض التطبيقات، وتعذر الوصول إلى مصدر أو أكثر",
@@ -341,7 +393,19 @@ struct AppsCatalogView: View {
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
             .refreshable { await loadRepositories(forceRefresh: true) }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { isHistoryPresented = true } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .accessibilityLabel("سجل التحميلات")
+
+                    Button {
+                        personalization.setUpdateNotificationsEnabled(!personalization.updateNotificationsEnabled)
+                    } label: {
+                        Image(systemName: personalization.updateNotificationsEnabled ? "bell.badge.fill" : "bell")
+                    }
+                    .accessibilityLabel("تنبيهات تحديث التطبيقات المفضلة")
+
                     if isLoading {
                         ProgressView()
                     } else {
@@ -351,6 +415,9 @@ struct AppsCatalogView: View {
                         .accessibilityLabel("تحديث التطبيقات")
                     }
                 }
+            }
+            .sheet(isPresented: $isHistoryPresented) {
+                AppsCatalogHistoryView()
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
@@ -376,6 +443,50 @@ struct AppsCatalogView: View {
             isLoading = false
             await loadRepositories()
         }
+    }
+
+    private var catalogControls: some View {
+        HStack(spacing: 8) {
+            Button {
+                favoritesOnly.toggle()
+                if favoritesOnly { recentOnly = false }
+            } label: {
+                Label("المفضلة", systemImage: favoritesOnly ? "heart.fill" : "heart")
+            }
+            .tint(favoritesOnly ? .pink : .accentColor)
+            .buttonStyle(.bordered)
+
+            Button {
+                recentOnly.toggle()
+                if recentOnly { favoritesOnly = false }
+            } label: {
+                Label("الأخيرة", systemImage: "clock")
+            }
+            .tint(recentOnly ? .accentColor : .secondary)
+            .buttonStyle(.bordered)
+
+            Spacer(minLength: 0)
+
+            Menu {
+                ForEach(AppsCatalogSort.allCases, id: \\.self) { option in
+                    Button {
+                        sortOption = option
+                    } label: {
+                        if sortOption == option {
+                            Label(option.title, systemImage: "checkmark")
+                        } else {
+                            Text(option.title)
+                        }
+                    }
+                }
+            } label: {
+                Label("ترتيب", systemImage: "arrow.up.arrow.down")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
     }
 
     private var categoryPicker: some View {
@@ -409,6 +520,7 @@ struct AppsCatalogView: View {
     private func appRow(_ entry: AppsCatalogEntry) -> some View {
         HStack(spacing: 12) {
             Button {
+                personalization.recordViewed(entry.id)
                 selectedRoute = SourceAppsView.SourceAppRoute(
                     sourceURL: entry.sourceURL, source: entry.source, app: entry.app
                 )
@@ -443,7 +555,18 @@ struct AppsCatalogView: View {
             }
             .buttonStyle(.plain)
 
-            DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+            VStack(spacing: 8) {
+                DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+                Button {
+                    personalization.toggleFavorite(entry.id)
+                } label: {
+                    Image(systemName: personalization.isFavorite(entry.id) ? "heart.fill" : "heart")
+                        .foregroundStyle(personalization.isFavorite(entry.id) ? Color.pink : Color.secondary)
+                        .font(.system(size: 17, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(personalization.isFavorite(entry.id) ? "إزالة من المفضلة" : "إضافة إلى المفضلة")
+            }
         }
         .padding(.vertical, 5)
     }
