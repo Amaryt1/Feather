@@ -258,7 +258,7 @@ extension ASRepository {
 					forKey: .localizedDescription
 				)
 
-			self.iconURL = try container.decode(URL.self, forKey: .iconURL)
+			self.iconURL = try container.decodeIfPresent(URL.self, forKey: .iconURL)
 
 			self.tintColor =
 				try container.decodeIfPresent(Color.self, forKey: .tintColor)

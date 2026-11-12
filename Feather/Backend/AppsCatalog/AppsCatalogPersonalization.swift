@@ -296,7 +296,10 @@ struct AppsCatalogSourcesStatusView: View {
     private let feeds: [(name: String, url: URL)] = [
         ("FastSign", URL(string: "https://fastsign.dev/repo.json")!),
         ("AppTesters", URL(string: "https://repository.apptesters.org")!),
-        ("CyPwn", URL(string: "https://ipa.cypwn.xyz/cypwn.json")!)
+        ("CyPwn", URL(string: "https://ipa.cypwn.xyz/cypwn.json")!),
+        ("Ksign", URL(string: "https://raw.githubusercontent.com/Nyasami/Ksign/refs/heads/main/repo.json")!),
+        ("SideStore Community", URL(string: "https://community-apps.sidestore.io/sidecommunity.json")!),
+        ("LiveContainer", URL(string: "https://raw.githubusercontent.com/LiveContainer/LiveContainer/refs/heads/main/apps.json")!)
     ]
 
     @State private var statuses: [String: String] = [:]

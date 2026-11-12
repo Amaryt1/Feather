@@ -265,12 +265,11 @@ struct AppsCatalogView: View {
     @State private var isHistoryPresented = false
     @State private var isDownloadsPresented = false
 
-    // These feed URLs are intentionally private to the app and are never displayed as source entries.
+    // No repositories are bundled into the Apps catalog.
     private let feedURLs: [URL] = []
 
-    // Build the catalog index once when repositories change. Rebuilding this
-    // 27k-app index from body-computed properties made every category redraw
-    // repeatedly scan the entire catalog.
+    // Build the catalog index once when repositories change to avoid repeated
+    // full-catalog scans during search, filtering, and sorting.
     @State private var catalogEntries: [AppsCatalogEntry] = []
     @State private var entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
     @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
@@ -469,7 +468,7 @@ struct AppsCatalogView: View {
             Spacer(minLength: 0)
 
             Menu {
-                ForEach(AppsCatalogSort.allCases, id: \\.self) { option in
+                ForEach(AppsCatalogSort.allCases, id: \.rawValue) { option in
                     Button {
                         sortOption = option
                     } label: {

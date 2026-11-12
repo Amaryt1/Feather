@@ -30,12 +30,9 @@ struct ExtendedTabbarView: View {
 				.customizationBehavior(.reorderable, for: .tabBar, .sidebar)
 				.hidden(horizontalSizeClass == .compact)
 			}
-			
 		}
 		.tabViewStyle(.sidebarAdaptable)
 		.tabViewCustomization($customization)
 	}
 	
-
 }
-
