@@ -141,6 +141,33 @@ private enum AppsCatalogCache {
     }
 }
 
+private enum AppsCatalogBundledSeed {
+    private struct SeedFile: Decodable {
+        struct Item: Decodable {
+            let sourceURL: URL
+            let repository: ASRepository
+        }
+        let sources: [Item]
+    }
+
+    static func load() -> [SourceAppsView.SourceRepositoryContext] {
+        guard
+            let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed", withExtension: "json"),
+            let data = try? Data(contentsOf: fileURL),
+            let seed = try? JSONDecoder().decode(SeedFile.self, from: data)
+        else {
+            return []
+        }
+
+        return seed.sources.map {
+            SourceAppsView.SourceRepositoryContext(
+                sourceURL: $0.sourceURL,
+                repository: $0.repository
+            )
+        }
+    }
+}
+
 struct AppsCatalogView: View {
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
     @State private var selectedCategory: AppsCatalogCategory = .all
@@ -251,7 +278,16 @@ struct AppsCatalogView: View {
         .task {
             guard !hasLoaded else { return }
             hasLoaded = true
-            await loadRepositories()
+
+            // A bundled snapshot is available before any network request, including
+            // on a fresh install with no internet connection.
+            let bundledRepositories = AppsCatalogBundledSeed.load()
+            if !bundledRepositories.isEmpty {
+                repositories = bundledRepositories
+                await loadRepositories(forceRefresh: true)
+            } else {
+                await loadRepositories()
+            }
         }
     }
 
