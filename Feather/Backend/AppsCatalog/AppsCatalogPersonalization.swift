@@ -157,11 +157,16 @@ struct AppsCatalogHistoryView: View {
         NavigationView {
             Group {
                 if personalization.downloadHistory.isEmpty {
-                    ContentUnavailableView(
-                        "لا يوجد سجل تحميلات",
-                        systemImage: "clock.arrow.circlepath",
-                        description: Text("ستظهر هنا الملفات التي تم تنزيلها من قسم التطبيقات.")
-                    )
+                    VStack(spacing: 10) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.secondary)
+                        Text("لا يوجد سجل تحميلات").font(.headline)
+                        Text("ستظهر هنا الملفات التي تم تنزيلها من قسم التطبيقات.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
                 } else {
                     List {
                         ForEach(personalization.downloadHistory) { record in
