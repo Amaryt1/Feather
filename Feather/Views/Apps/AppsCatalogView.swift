@@ -1,11 +1,10 @@
 import SwiftUI
 import AltSourceKit
 import NimbleViews
-import NimbleJSON
 import NukeUI
 import SWCompression
 
-private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
+private enum AppsCatalogCategory: String, CaseIterable, Hashable, Identifiable, Sendable {
     case all, games, emulators, media, design, social, productivity
     case developer, signing, jailbreak, customization, ai, education, utilities, other
 
@@ -50,235 +49,290 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
         case .other: "app"
         }
     }
+}
 
-    static func classify(_ app: ASRepository.App) -> AppsCatalogCategory {
-        let raw = (app.category ?? "")
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
-        let text = [app.category, app.name, app.subtitle, app.description,
-                    app.localizedDescription, app.developer]
-            .compactMap { $0 }
-            .joined(separator: " ")
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
+// MARK: - Lightweight bundled index
 
-        func has(_ terms: [String]) -> Bool { terms.contains { text.contains($0) } }
+/// This is deliberately a small display-only model. The complete AltSourceKit
+/// repository is not decoded until the user opens or downloads an app.
+private struct AppsCatalogEntry: Decodable, Identifiable, Sendable {
+    let id: String
+    let sourceIndex: Int
+    let appIndex: Int
+    let bundleIdentifier: String
+    let appDownloadURL: String?
+    let name: String
+    let subtitle: String?
+    let developer: String?
+    let iconURL: URL?
+    let category: String
 
-        if has(["emulator", "emulation", "retroarch", "ppsspp", "delta emulator", "محاكي", "محاكاة"]) { return .emulators }
-        if has(["game", "games", "gaming", "arcade", "rpg", "minecraft", "terraria", "fortnite", "لعبة", "ألعاب", "العاب"]) { return .games }
-        if has(["photo editor", "photo editing", "graphic design", "drawing", "illustration", "canva", "procreate", "vector editor", "video editor", "تصميم", "تعديل الصور", "رسم"]) { return .design }
-        if has(["movie", "movies", "tv series", "streaming", "iptv", "anime", "video player", "music player", "podcast", "cinema", "film", "أفلام", "مسلسلات", "انمي", "أنمي", "مشاهدة", "بث"]) { return .media }
-        if has(["artificial intelligence", "ai assistant", "chatgpt", "openai", "claude", "gemini", "copilot", "stable diffusion", "machine learning", "ذكاء اصطناعي"]) { return .ai }
-        if has(["jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine", "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza", "tweak", "جيلبريك", "تويك"]) { return .jailbreak }
-        if has(["signing", "signer", "ksign", "esign", "scarlet", "sideload", "ipa installer", "certificate manager", "توقيع", "تثبيت ipa", "شهادات"]) { return .signing }
-        if has(["ide", "code editor", "developer tool", "terminal", "git client", "ssh client", "debugger", "programming", "xcode", "برمجة", "مطور"]) { return .developer }
-        if has(["language learning", "dictionary", "flashcards", "education", "school", "university", "تعليم", "قاموس", "تعلم", "دراسة"]) { return .education }
-        if has(["productivity", "task manager", "todo", "notes", "calendar", "office suite", "document editor", "إنتاجية", "مهام", "ملاحظات"]) { return .productivity }
-        if has(["social network", "messenger", "chat app", "telegram", "discord", "reddit", "social media", "مراسلة", "تواصل اجتماعي"]) { return .social }
-        if has(["theme", "icon pack", "customization", "widgets", "wallpaper", "lock screen", "تخصيص", "ثيمات", "خلفيات"]) { return .customization }
-
-        switch raw {
-        case "games", "game", "gaming": return .games
-        case "graphics", "photo-video", "design", "photography": return .design
-        case "ai", "artificial-intelligence", "machine-learning": return .ai
-        case "emulator", "emulators": return .emulators
-        case "developer", "development": return .developer
-        case "entertainment", "music", "video", "media": return .media
-        case "productivity", "business": return .productivity
-        case "customization", "themes", "personalization": return .customization
-        case "jailbreak", "tweaks": return .jailbreak
-        case "signing", "sideloading": return .signing
-        case "education": return .education
-        case "social": return .social
-        case "utilities", "utility", "lifestyle", "health", "navigation", "weather", "finance", "news": return .utilities
-        default: return .other
-        }
+    var catalogCategory: AppsCatalogCategory {
+        AppsCatalogCategory(rawValue: category) ?? .other
     }
 }
 
-private struct AppsCatalogEntry: Identifiable {
-    let sourceURL: URL?
-    let source: ASRepository
+private struct AppsCatalogSourceReference: Decodable, Identifiable, Sendable {
+    let id: Int
+    let sourceURL: URL
+    let resourceName: String
+}
+
+private struct AppsCatalogIndex: Decodable, Sendable {
+    let schemaVersion: Int
+    let sources: [AppsCatalogSourceReference]
+    let apps: [AppsCatalogEntry]
+}
+
+private struct AppsCatalogPreparedSnapshot: Sendable {
+    let sources: [AppsCatalogSourceReference]
+    let entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]]
+    let categoryCounts: [AppsCatalogCategory: Int]
+    let visibleCategories: [AppsCatalogCategory]
+}
+
+private struct AppsCatalogResolvedApp: Sendable {
+    let sourceURL: URL
+    let repository: ASRepository
     let app: ASRepository.App
-    let category: AppsCatalogCategory
-
-    var id: String { "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)" }
 }
 
-private enum AppsCatalogCache {
-    private static func fileURL(for url: URL) -> URL? {
-        guard let cachesDirectory = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else { return nil }
-
-        let hash = url.absoluteString.utf8.reduce(UInt64(14695981039346656037)) {
-            ($0 ^ UInt64($1)) &* 1099511628211
-        }
-        return cachesDirectory
-            .appendingPathComponent("AppsCatalog", isDirectory: true)
-            .appendingPathComponent(String(format: "%016llx.json", hash))
-    }
-
-    static func load(for url: URL) -> ASRepository? {
-        guard let fileURL = fileURL(for: url),
-              let data = try? Data(contentsOf: fileURL) else { return nil }
-        return try? JSONDecoder().decode(ASRepository.self, from: data)
-    }
-
-    static func save(_ data: Data, for url: URL) {
-        guard let fileURL = fileURL(for: url),
-              (try? JSONDecoder().decode(ASRepository.self, from: data)) != nil else { return }
-
-        do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try data.write(to: fileURL, options: .atomic)
-        } catch {
-            // Caching is an optimization; a cache write failure must not stop loading.
-        }
-    }
-}
-
-private enum AppsCatalogBundledSeed {
-    static func load() async -> [SourceAppsView.SourceRepositoryContext] {
+private enum AppsCatalogBundleLoader {
+    /// Reads and groups only the prebuilt index. All decompression, decoding,
+    /// and grouping happen away from the main actor.
+    static func loadIndex() async -> AppsCatalogPreparedSnapshot? {
         await Task.detached(priority: .userInitiated) {
-            decode()
+            guard
+                let indexURL = Bundle.main.url(
+                    forResource: "AppsCatalogIndex",
+                    withExtension: "json.gz"
+                ),
+                let compressedData = try? Data(contentsOf: indexURL),
+                let indexData = try? GzipArchive.unarchive(archive: compressedData),
+                let index = try? JSONDecoder().decode(AppsCatalogIndex.self, from: indexData),
+                index.schemaVersion == 1,
+                !index.sources.isEmpty,
+                !index.apps.isEmpty
+            else {
+                return nil
+            }
+
+            var grouped = Dictionary(grouping: index.apps, by: \.catalogCategory)
+            grouped[.all] = index.apps
+
+            var counts: [AppsCatalogCategory: Int] = [.all: index.apps.count]
+            for (category, entries) in grouped where category != .all {
+                counts[category] = entries.count
+            }
+
+            let visible = AppsCatalogCategory.allCases.filter {
+                $0 == .all || counts[$0, default: 0] > 0
+            }
+
+            return AppsCatalogPreparedSnapshot(
+                sources: index.sources,
+                entriesByCategory: grouped,
+                categoryCounts: counts,
+                visibleCategories: visible
+            )
         }.value
     }
 
-    private static func decode() -> [SourceAppsView.SourceRepositoryContext] {
+    /// The full repository is loaded lazily, once per source, only when the
+    /// user opens an item or presses Get.
+    static func loadRepository(for source: AppsCatalogSourceReference) -> ASRepository? {
         guard
-            let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed.json", withExtension: "gz"),
+            let fileURL = Bundle.main.url(
+                forResource: source.resourceName,
+                withExtension: "json.gz"
+            ),
             let compressedData = try? Data(contentsOf: fileURL),
-            let data = try? GzipArchive.unarchive(archive: compressedData),
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let items = root["sources"] as? [[String: Any]]
+            let repositoryData = try? GzipArchive.unarchive(archive: compressedData)
         else {
-            return []
+            return nil
         }
 
-        var contexts: [SourceAppsView.SourceRepositoryContext] = []
+        let decoder = JSONDecoder()
+        if let repository = try? decoder.decode(ASRepository.self, from: repositoryData) {
+            return repository
+        }
 
-        for item in items {
-            guard
-                let sourceString = item["sourceURL"] as? String,
-                let sourceURL = URL(string: sourceString),
-                let repositoryObject = item["repository"] as? [String: Any],
-                let repositoryData = try? JSONSerialization.data(withJSONObject: repositoryObject)
-            else {
-                continue
+        // A single malformed app in a third-party feed must not make every
+        // other app in that source impossible to open.
+        guard
+            var root = try? JSONSerialization.jsonObject(with: repositoryData) as? [String: Any],
+            let rawApps = root["apps"] as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        let validApps = rawApps.filter { appObject in
+            guard let appData = try? JSONSerialization.data(withJSONObject: appObject) else {
+                return false
             }
+            return (try? decoder.decode(ASRepository.App.self, from: appData)) != nil
+        }
 
-            // Fast path: decode the whole source once. If any unusual app prevents
-            // that, fall back to independent decoding so valid apps are retained.
-            if let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData) {
-                contexts.append(
-                    SourceAppsView.SourceRepositoryContext(
-                        sourceURL: sourceURL,
-                        repository: repository
-                    )
-                )
-                continue
-            }
+        guard !validApps.isEmpty else { return nil }
+        root["apps"] = validApps
 
-            guard let apps = repositoryObject["apps"] as? [[String: Any]] else {
-                continue
-            }
+        if
+            let filteredData = try? JSONSerialization.data(withJSONObject: root),
+            let repository = try? decoder.decode(ASRepository.self, from: filteredData)
+        {
+            return repository
+        }
 
-            var metadata = repositoryObject
-            metadata.removeValue(forKey: "apps")
-
-            for appObject in apps {
-                var singleAppRepository = metadata
-                singleAppRepository["apps"] = [appObject]
-
-                guard
-                    let singleRepositoryData = try? JSONSerialization.data(withJSONObject: singleAppRepository),
-                    let repository = try? JSONDecoder().decode(ASRepository.self, from: singleRepositoryData)
-                else {
-                    continue
-                }
-
-                contexts.append(
-                    SourceAppsView.SourceRepositoryContext(
-                        sourceURL: sourceURL,
-                        repository: repository
-                    )
-                )
+        // Last-resort metadata sanitization: preserve the useful source identity
+        // and display fields while dropping optional malformed repository fields.
+        var safeRoot: [String: Any] = ["apps": validApps]
+        for key in [
+            "identifier", "name", "subtitle", "description",
+            "website", "iconURL", "headerURL", "patreonURL"
+        ] {
+            if let value = root[key] as? String {
+                safeRoot[key] = value
             }
         }
 
-        return contexts
+        guard let safeData = try? JSONSerialization.data(withJSONObject: safeRoot) else {
+            return nil
+        }
+        return try? decoder.decode(ASRepository.self, from: safeData)
     }
 }
 
+// MARK: - Shared catalog store
+
+/// A shared store prevents the index from being decoded again when SwiftUI
+/// recreates the tab's view hierarchy or the user switches tabs.
+@MainActor
+private final class AppsCatalogStore: ObservableObject {
+    static let shared = AppsCatalogStore()
+
+    @Published private(set) var entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
+    @Published private(set) var categoryCounts: [AppsCatalogCategory: Int] = [:]
+    @Published private(set) var visibleCategories: [AppsCatalogCategory] = [.all]
+    @Published private(set) var isLoading = true
+    @Published private(set) var isReady = false
+    @Published private(set) var errorMessage: String?
+    @Published private(set) var detailErrorMessage: String?
+
+    private var sourcesByIndex: [Int: AppsCatalogSourceReference] = [:]
+    private var repositoriesBySource: [Int: ASRepository] = [:]
+    private var repositoryTasks: [Int: Task<ASRepository?, Never>] = [:]
+    private var indexTask: Task<Void, Never>?
+
+    func loadIfNeeded() {
+        guard !isReady, indexTask == nil else { return }
+
+        isLoading = true
+        errorMessage = nil
+        indexTask = Task {
+            let prepared = await AppsCatalogBundleLoader.loadIndex()
+            guard !Task.isCancelled else { return }
+
+            if let prepared {
+                sourcesByIndex = Dictionary(
+                    uniqueKeysWithValues: prepared.sources.map { ($0.id, $0) }
+                )
+                entriesByCategory = prepared.entriesByCategory
+                categoryCounts = prepared.categoryCounts
+                visibleCategories = prepared.visibleCategories
+                isReady = true
+            } else {
+                errorMessage = "ملف فهرس التطبيقات غير موجود أو غير صالح. شغّل مهمة تحديث المكتبة في GitHub ثم أعد بناء التطبيق."
+            }
+
+            isLoading = false
+            indexTask = nil
+        }
+    }
+
+    func retryLoadingIndex() {
+        guard !isLoading else { return }
+        isReady = false
+        errorMessage = nil
+        loadIfNeeded()
+    }
+
+    func resolve(_ entry: AppsCatalogEntry) async -> AppsCatalogResolvedApp? {
+        detailErrorMessage = nil
+
+        guard let source = sourcesByIndex[entry.sourceIndex] else {
+            detailErrorMessage = "تعذر العثور على مصدر هذا التطبيق."
+            return nil
+        }
+
+        let repository: ASRepository
+        if let cached = repositoriesBySource[source.id] {
+            repository = cached
+        } else {
+            let task: Task<ASRepository?, Never>
+            if let existingTask = repositoryTasks[source.id] {
+                task = existingTask
+            } else {
+                let newTask = Task.detached(priority: .userInitiated) {
+                    AppsCatalogBundleLoader.loadRepository(for: source)
+                }
+                repositoryTasks[source.id] = newTask
+                task = newTask
+            }
+
+            guard let loaded = await task.value else {
+                repositoryTasks[source.id] = nil
+                detailErrorMessage = "تعذر قراءة بيانات المستودع لهذا التطبيق."
+                return nil
+            }
+
+            repositoriesBySource[source.id] = loaded
+            repositoryTasks[source.id] = nil
+            repository = loaded
+        }
+
+        let matchingApp = repository.apps.first { app in
+            let identifierMatches = entry.bundleIdentifier.isEmpty || app.id == entry.bundleIdentifier
+            let downloadMatches = entry.appDownloadURL == nil
+                || app.downloadURL?.absoluteString == entry.appDownloadURL
+            return identifierMatches && downloadMatches
+        } ?? repository.apps.first(where: { $0.currentName == entry.name })
+
+        let app: ASRepository.App
+        if let matchingApp {
+            app = matchingApp
+        } else if repository.apps.indices.contains(entry.appIndex) {
+            app = repository.apps[entry.appIndex]
+        } else {
+            detailErrorMessage = "لم أتمكن من مطابقة التطبيق مع بيانات المستودع."
+            return nil
+        }
+
+        return AppsCatalogResolvedApp(
+            sourceURL: source.sourceURL,
+            repository: repository,
+            app: app
+        )
+    }
+}
+
+// MARK: - Catalog view
+
 struct AppsCatalogView: View {
-    @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
+    @StateObject private var catalog = AppsCatalogStore.shared
     @State private var selectedCategory: AppsCatalogCategory = .all
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
-    @State private var isLoading = true
-    @State private var hasLoaded = false
-    @State private var hadFailures = false
-
-    // These feed URLs are intentionally private to the app and are never displayed as source entries.
-    private let feedURLs: [URL] = [
-        URL(string: "https://fastsign.dev/repo.json")!,
-        URL(string: "https://repository.apptesters.org")!,
-        URL(string: "https://ipa.cypwn.xyz/cypwn.json")!
-    ]
-
-    // Build the catalog index once when repositories change. Rebuilding this
-    // 27k-app index from body-computed properties made every category redraw
-    // repeatedly scan the entire catalog.
-    @State private var catalogEntries: [AppsCatalogEntry] = []
-    @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
-
-    private var entries: [AppsCatalogEntry] { catalogEntries }
-
-    private func rebuildEntries() {
-        var seen = Set<String>()
-        catalogEntries = repositories.flatMap { context in
-            context.repository.apps.compactMap { app in
-                let name = app.currentName
-                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                let key = "\(bundle)|\(name)"
-                guard seen.insert(key).inserted else { return nil }
-                return AppsCatalogEntry(
-                    sourceURL: context.sourceURL,
-                    source: context.repository,
-                    app: app,
-                    category: AppsCatalogCategory.classify(app)
-                )
-            }
-        }
-        .sorted { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
-
-        // Category classification is relatively expensive. Calculate each app's
-        // category once while building the index, then keep counts ready so
-        // rendering the category picker never rescans the entire catalog.
-        var counts: [AppsCatalogCategory: Int] = [:]
-        for entry in catalogEntries {
-            counts[entry.category, default: 0] += 1
-        }
-        categoryCounts = counts
-    }
-
-    private var visibleCategories: [AppsCatalogCategory] {
-        AppsCatalogCategory.allCases.filter { $0 == .all || categoryCount($0) > 0 }
-    }
+    @State private var openingEntryID: String?
 
     private var filteredEntries: [AppsCatalogEntry] {
-        entries.filter { entry in
-            let categoryMatches = selectedCategory == .all || entry.category == selectedCategory
-            let searchable = [entry.app.currentName, entry.app.currentDescription ?? "",
-                              entry.app.developer ?? ""].joined(separator: " ")
-            return categoryMatches && (searchText.isEmpty || searchable.localizedCaseInsensitiveContains(searchText))
+        let categoryEntries = catalog.entriesByCategory[selectedCategory] ?? []
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return categoryEntries }
+
+        return categoryEntries.filter { entry in
+            entry.name.localizedCaseInsensitiveContains(query)
+                || (entry.subtitle ?? "").localizedCaseInsensitiveContains(query)
+                || (entry.developer ?? "").localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -287,9 +341,8 @@ struct AppsCatalogView: View {
             VStack(spacing: 0) {
                 categoryPicker
 
-                if hadFailures && !repositories.isEmpty {
-                    Label("تم تحميل بعض التطبيقات، وتعذر الوصول إلى مصدر أو أكثر",
-                          systemImage: "exclamationmark.triangle")
+                if let detailErrorMessage = catalog.detailErrorMessage {
+                    Label(detailErrorMessage, systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -297,10 +350,22 @@ struct AppsCatalogView: View {
                         .padding(.bottom, 6)
                 }
 
-                if isLoading && repositories.isEmpty {
+                if catalog.isLoading {
                     Spacer()
-                    ProgressView("جارٍ تحميل التطبيقات…")
+                    ProgressView("جارٍ تجهيز مكتبة التطبيقات…")
                     Spacer()
+                } else if !catalog.isReady {
+                    ContentUnavailableView {
+                        Label("تعذر تجهيز التطبيقات", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(catalog.errorMessage ?? "ملف المكتبة غير متاح.")
+                    } actions: {
+                        Button("إعادة المحاولة") {
+                            catalog.retryLoadingIndex()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if filteredEntries.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "square.grid.3x3")
@@ -308,7 +373,7 @@ struct AppsCatalogView: View {
                             .foregroundStyle(.secondary)
                         Text(searchText.isEmpty ? "لا توجد تطبيقات في هذا القسم" : "لا توجد نتائج")
                             .font(.headline)
-                        Text("اسحب للأسفل لتحديث قائمة التطبيقات.")
+                        Text("جرّب فئة أخرى أو غيّر عبارة البحث.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -317,7 +382,9 @@ struct AppsCatalogView: View {
                 } else {
                     List {
                         Section {
-                            ForEach(filteredEntries) { entry in appRow(entry) }
+                            ForEach(filteredEntries) { entry in
+                                appRow(entry)
+                            }
                         } header: {
                             Text("\(filteredEntries.count) تطبيق")
                         }
@@ -326,60 +393,57 @@ struct AppsCatalogView: View {
                 }
             }
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
-            .refreshable { await loadRepositories(forceRefresh: true) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    if isLoading {
+                    if catalog.isLoading {
                         ProgressView()
-                    } else {
-                        Button { Task { await loadRepositories(forceRefresh: true) } } label: {
+                    } else if !catalog.isReady {
+                        Button {
+                            catalog.retryLoadingIndex()
+                        } label: {
                             Image(systemName: "arrow.clockwise")
                         }
-                        .accessibilityLabel("تحديث التطبيقات")
+                        .accessibilityLabel("إعادة تحميل فهرس التطبيقات")
                     }
                 }
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
-                SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
+                SourceAppsDetailView(
+                    sourceURL: route.sourceURL,
+                    source: route.source,
+                    app: route.app
+                )
             }
         }
         .task {
-            guard !hasLoaded else { return }
-
-            // Keep the loading state visible while the bundled snapshot is decoded.
-            // The complete bundled catalog is the first screen; do not immediately
-            // replace it with a slow, incremental network stream on every entry.
-            let bundledRepositories = await AppsCatalogBundledSeed.load()
-            if !bundledRepositories.isEmpty {
-                repositories = bundledRepositories
-                rebuildEntries()
-                hasLoaded = true
-                isLoading = false
-                return
-            }
-
-            // Older installs without a bundled snapshot fall back to disk cache
-            // and then to the network.
-            hasLoaded = true
-            isLoading = false
-            await loadRepositories()
+            catalog.loadIfNeeded()
         }
     }
 
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(visibleCategories) { category in
+                ForEach(catalog.visibleCategories) { category in
                     let selected = selectedCategory == category
                     Button {
-                        withAnimation(.snappy(duration: 0.2)) { selectedCategory = category }
+                        // The target category is already indexed. Switching only
+                        // swaps the visible array; it does not classify or rescan
+                        // the full catalog.
+                        selectedCategory = category
                     } label: {
-                        Label("\(category.title) · \(categoryCount(category))", systemImage: category.icon)
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 9)
-                            .background(Capsule().fill(selected ? Color.accentColor : Color(.secondarySystemBackground)))
-                            .foregroundStyle(selected ? Color.white : Color.primary)
+                        Label(
+                            "\(category.title) · \(categoryCount(category))",
+                            systemImage: category.icon
+                        )
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 9)
+                        .background(
+                            Capsule().fill(
+                                selected ? Color.accentColor : Color(.secondarySystemBackground)
+                            )
+                        )
+                        .foregroundStyle(selected ? Color.white : Color.primary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -390,38 +454,39 @@ struct AppsCatalogView: View {
     }
 
     private func categoryCount(_ category: AppsCatalogCategory) -> Int {
-        category == .all ? entries.count : categoryCounts[category, default: 0]
+        catalog.categoryCounts[category, default: 0]
     }
 
     @ViewBuilder
     private func appRow(_ entry: AppsCatalogEntry) -> some View {
         HStack(spacing: 12) {
             Button {
-                selectedRoute = SourceAppsView.SourceAppRoute(
-                    sourceURL: entry.sourceURL, source: entry.source, app: entry.app
-                )
+                open(entry)
             } label: {
                 HStack(spacing: 12) {
-                    LazyImage(url: entry.app.iconURL) { state in
+                    LazyImage(url: entry.iconURL) { state in
                         if let image = state.image {
                             image.resizable().aspectRatio(contentMode: .fill)
                         } else {
-                            Image("App_Unknown").resizable().aspectRatio(contentMode: .fit).padding(10)
+                            Image("App_Unknown")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .padding(10)
                         }
                     }
                     .frame(width: 58, height: 58)
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(entry.app.currentName)
+                        Text(entry.name)
                             .font(.headline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        Text(entry.app.currentDescription ?? "تطبيق")
+                        Text(entry.subtitle ?? "تطبيق")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
-                        Text(entry.category.title)
+                        Text(entry.catalogCategory.title)
                             .font(.caption)
                             .foregroundStyle(Color.accentColor)
                     }
@@ -430,337 +495,100 @@ struct AppsCatalogView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(openingEntryID == entry.id)
 
-            DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+            if openingEntryID == entry.id {
+                ProgressView()
+                    .frame(width: 64)
+            } else {
+                AppsCatalogDownloadButton(store: catalog, entry: entry)
+            }
         }
         .padding(.vertical, 5)
     }
 
-    @MainActor
-    private func loadRepositories(forceRefresh: Bool = false) async {
-        guard !isLoading else { return }
-        isLoading = true
-        hadFailures = false
-        defer { isLoading = false }
+    private func open(_ entry: AppsCatalogEntry) {
+        guard openingEntryID == nil else { return }
+        openingEntryID = entry.id
 
-        // On normal entry, restore complete repositories from disk first.
-        // Only sources without a valid local copy need a network request.
-        let urlsToLoad: [URL]
-        if forceRefresh {
-            urlsToLoad = feedURLs
-        } else {
-            var missingURLs: [URL] = []
-            for url in feedURLs {
-                if let cachedRepository = AppsCatalogCache.load(for: url) {
-                    repositories.removeAll { $0.sourceURL == url }
-                    repositories.append(
-                        SourceAppsView.SourceRepositoryContext(
-                            sourceURL: url,
-                            repository: cachedRepository
-                        )
-                    )
-                } else {
-                    missingURLs.append(url)
-                }
+        Task {
+            let resolved = await catalog.resolve(entry)
+            if let resolved {
+                selectedRoute = SourceAppsView.SourceAppRoute(
+                    sourceURL: resolved.sourceURL,
+                    source: resolved.repository,
+                    app: resolved.app
+                )
             }
-
-            // Publish one prebuilt index after restoring all cached feeds.
-            rebuildEntries()
-
-            // All feeds are already cached: show the full catalog immediately.
-            if missingURLs.isEmpty { return }
-            urlsToLoad = missingURLs
-        }
-
-        // Refresh feeds concurrently. Keep the last complete cached catalog visible
-        // until each refreshed feed has finished successfully.
-        await withTaskGroup(of: Bool.self) { group in
-            for url in urlsToLoad {
-                group.addTask {
-                    do {
-                        var fetchedContexts: [SourceAppsView.SourceRepositoryContext] = []
-
-                        for try await partialRepository in AppsCatalogStreamingLoader.stream(from: url) {
-                            let context = SourceAppsView.SourceRepositoryContext(
-                                sourceURL: url,
-                                repository: partialRepository
-                            )
-                            fetchedContexts.append(context)
-                        }
-
-                        await MainActor.run {
-                            repositories.removeAll { $0.sourceURL == url }
-                            repositories.append(contentsOf: fetchedContexts)
-                            rebuildEntries()
-                        }
-                        return true
-                    } catch {
-                        return false
-                    }
-                }
-            }
-
-            for await succeeded in group {
-                if !succeeded {
-                    hadFailures = true
-                }
-            }
+            openingEntryID = nil
         }
     }
 }
 
-// MARK: - Incremental repository JSON reader
+// MARK: - Lazy download action
 
-/// Reads the top-level "apps" array as the response arrives and decodes one app
-/// object at a time. The small repository wrapper preserves compatibility with
-/// the existing SourceAppsDetailView and DownloadButtonView APIs.
-private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    private var continuation: AsyncThrowingStream<ASRepository, Error>.Continuation?
-    private var session: URLSession?
-    private var task: URLSessionDataTask?
-    private var buffer: [UInt8] = []
-    private var searchIndex = 0
-    private var readIndex = 0
-    private var appsArrayStarted = false
-    private var appsArrayFinished = false
-    private var repositoryPrefix = Data()
-    private var downloadedData = Data()
-    private var sourceURL: URL?
+/// Keeps the existing DownloadButtonView behavior, but resolves its full
+/// AltSourceKit models only after the user actually presses Get.
+private struct AppsCatalogDownloadButton: View {
+    @ObservedObject var store: AppsCatalogStore
+    let entry: AppsCatalogEntry
 
-    // Persist the JSON scanner state across network callbacks. Large app objects
-    // are therefore scanned only once, rather than from their first byte per chunk.
-    private var objectStartIndex: Int?
-    private var objectScanIndex = 0
-    private var objectDepth = 0
-    private var objectInString = false
-    private var objectEscaped = false
+    @State private var resolvedApp: AppsCatalogResolvedApp?
+    @State private var isResolving = false
 
-    // URLSession invokes this loader on one serial delegate queue.
-    private let decoder = JSONDecoder()
-
-    private static let appsKey = Array("\"apps\"".utf8)
-    private static let whitespace: Set<UInt8> = [32, 9, 10, 13]
-
-    static func stream(from url: URL) -> AsyncThrowingStream<ASRepository, Error> {
-        AsyncThrowingStream { continuation in
-            let loader = AppsCatalogStreamingLoader()
-            loader.continuation = continuation
-            loader.sourceURL = url
-
-            let delegateQueue = OperationQueue()
-            delegateQueue.maxConcurrentOperationCount = 1
-            let session = URLSession(
-                configuration: .default,
-                delegate: loader,
-                delegateQueue: delegateQueue
-            )
-            loader.session = session
-            let task = session.dataTask(with: url)
-            loader.task = task
-
-            continuation.onTermination = { @Sendable _ in
-                session.invalidateAndCancel()
-            }
-            task.resume()
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        dataTask: URLSessionDataTask,
-        didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-    ) {
-        if let response = response as? HTTPURLResponse,
-           !(200...299).contains(response.statusCode) {
-            completionHandler(.cancel)
-            continuation?.finish(throwing: URLError(.badServerResponse))
-            return
-        }
-        completionHandler(.allow)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        downloadedData.append(data)
-        buffer.append(contentsOf: data)
-        consumeAvailableApps()
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didCompleteWithError error: Error?
-    ) {
-        if let error {
-            continuation?.finish(throwing: error)
-        } else if !appsArrayStarted || !appsArrayFinished {
-            continuation?.finish(throwing: URLError(.cannotParseResponse))
-        } else {
-            if let sourceURL {
-                AppsCatalogCache.save(downloadedData, for: sourceURL)
-            }
-            continuation?.finish()
-        }
-        session.finishTasksAndInvalidate()
-    }
-
-    private func consumeAvailableApps() {
-        guard !appsArrayFinished else { return }
-
-        if !appsArrayStarted {
-            while searchIndex + Self.appsKey.count <= buffer.count {
-                let keyStart = searchIndex
-                let candidate = buffer[keyStart..<(keyStart + Self.appsKey.count)]
-                if candidate.elementsEqual(Self.appsKey) {
-                    var lookahead = keyStart + Self.appsKey.count
-                    while lookahead < buffer.count,
-                          Self.whitespace.contains(buffer[lookahead]) {
-                        lookahead += 1
-                    }
-                    // The key may be split from its colon or opening bracket
-                    // across network chunks. Keep the key position for the next chunk.
-                    guard lookahead < buffer.count else {
-                        searchIndex = keyStart
-                        return
-                    }
-                    guard buffer[lookahead] == 58 else {
-                        searchIndex = keyStart + 1
-                        continue
-                    }
-                    lookahead += 1
-                    while lookahead < buffer.count,
-                          Self.whitespace.contains(buffer[lookahead]) {
-                        lookahead += 1
-                    }
-                    guard lookahead < buffer.count else {
-                        searchIndex = keyStart
-                        return
-                    }
-                    if buffer[lookahead] == 91 {
-                        let candidatePrefix = Data(buffer[..<keyStart])
-                        var validationData = candidatePrefix
-                        validationData.append(Data("\"apps\":[]}".utf8))
-                        guard (try? JSONSerialization.jsonObject(with: validationData)) != nil else {
-                            searchIndex = keyStart + 1
-                            continue
-                        }
-                        repositoryPrefix = candidatePrefix
-                        readIndex = lookahead + 1
-                        searchIndex = 0
-                        appsArrayStarted = true
-                        break
-                    }
-                    searchIndex = keyStart + 1
-                } else {
-                    searchIndex += 1
-                }
-            }
-            guard appsArrayStarted else {
-                // Retain enough trailing bytes to recognize a key split at a chunk boundary.
-                if searchIndex > Self.appsKey.count {
-                    let discardCount = searchIndex - Self.appsKey.count
-                    buffer.removeFirst(discardCount)
-                    searchIndex = Self.appsKey.count
-                }
-                return
-            }
-        }
-
-        while readIndex < buffer.count {
-            while readIndex < buffer.count,
-                  Self.whitespace.contains(buffer[readIndex]) || buffer[readIndex] == 44 {
-                readIndex += 1
-            }
-            guard readIndex < buffer.count else { return }
-
-            if buffer[readIndex] == 93 {
-                appsArrayFinished = true
-                readIndex += 1
-                return
-            }
-
-            guard buffer[readIndex] == 123 else {
-                // Ignore unexpected separators while remaining inside the apps array.
-                readIndex += 1
-                continue
-            }
-
-            if objectStartIndex == nil {
-                objectStartIndex = readIndex
-                objectScanIndex = readIndex
-                objectDepth = 0
-                objectInString = false
-                objectEscaped = false
-            }
-
-            guard let objectStart = objectStartIndex else { return }
-            var completedEnd: Int?
-
-            while objectScanIndex < buffer.count {
-                let byte = buffer[objectScanIndex]
-                if objectInString {
-                    if objectEscaped {
-                        objectEscaped = false
-                    } else if byte == 92 {
-                        objectEscaped = true
-                    } else if byte == 34 {
-                        objectInString = false
-                    }
-                } else {
-                    if byte == 34 {
-                        objectInString = true
-                    } else if byte == 123 {
-                        objectDepth += 1
-                    } else if byte == 125 {
-                        objectDepth -= 1
-                        if objectDepth == 0 {
-                            completedEnd = objectScanIndex
-                            objectScanIndex += 1
-                            break
+    var body: some View {
+        Group {
+            if let resolvedApp {
+                DownloadButtonView(
+                    sourceURL: resolvedApp.sourceURL,
+                    source: resolvedApp.repository,
+                    app: resolvedApp.app
+                )
+            } else {
+                Button {
+                    Task { await resolveAndStartDownload() }
+                } label: {
+                    Group {
+                        if isResolving {
+                            ProgressView()
+                                .frame(width: 38, height: 30)
+                        } else {
+                            Text("Get")
+                                .lineLimit(0)
+                                .font(.headline.bold())
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 6)
+                                .background(Color(uiColor: .quaternarySystemFill))
+                                .clipShape(Capsule())
                         }
                     }
                 }
-                objectScanIndex += 1
+                .buttonStyle(.borderless)
+                .disabled(isResolving)
             }
-
-            guard let endIndex = completedEnd else {
-                // Resume at the first unseen byte when the next network chunk arrives.
-                return
-            }
-
-            let appData = Data(buffer[objectStart...endIndex])
-            readIndex = endIndex + 1
-            objectStartIndex = nil
-            objectScanIndex = 0
-            objectDepth = 0
-            objectInString = false
-            objectEscaped = false
-
-            // A one-app repository keeps the existing app detail and download
-            // components working while the rest of the feed is still arriving.
-            var repositoryData = repositoryPrefix
-            repositoryData.append(Data("\"apps\":[".utf8))
-            repositoryData.append(appData)
-            repositoryData.append(Data("]}".utf8))
-
-            if let repository = try? decoder.decode(ASRepository.self, from: repositoryData) {
-                continuation?.yield(repository)
-            }
-
-            compactBufferIfNeeded()
         }
     }
 
-    /// Avoid repeated Array.removeFirst calls while consuming individual apps.
-    /// Compact occasionally, and only between complete JSON objects.
-    private func compactBufferIfNeeded() {
-        guard objectStartIndex == nil,
-              readIndex >= 65_536,
-              readIndex * 2 >= buffer.count else { return }
+    @MainActor
+    private func resolveAndStartDownload() async {
+        guard !isResolving else { return }
+        isResolving = true
+        defer { isResolving = false }
 
-        let discarded = readIndex
-        buffer.removeFirst(discarded)
-        readIndex = 0
-        searchIndex = max(0, searchIndex - discarded)
+        guard let resolved = await store.resolve(entry) else { return }
+        resolvedApp = resolved
+
+        guard let downloadURL = resolved.app.currentDownloadUrl else { return }
+        let provenance = SourceAppProvenance(
+            sourceURL: resolved.sourceURL,
+            repository: resolved.repository,
+            app: resolved.app
+        )
+        _ = DownloadManager.shared.startDownload(
+            from: downloadURL,
+            id: resolved.app.currentUniqueId,
+            sourceProvenance: provenance
+        )
     }
 }
