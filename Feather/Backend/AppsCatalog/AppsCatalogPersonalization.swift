@@ -299,7 +299,7 @@ struct AppsCatalogSourcesStatusView: View {
         ("CyPwn", URL(string: "https://ipa.cypwn.xyz/cypwn.json")!),
         ("Ksign", URL(string: "https://raw.githubusercontent.com/Nyasami/Ksign/refs/heads/main/repo.json")!),
         ("SideStore Community", URL(string: "https://community-apps.sidestore.io/sidecommunity.json")!),
-        ("LiveContainer", URL(string: "https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json")!)
+        ("LiveContainer", URL(string: "https://raw.githubusercontent.com/LiveContainer/LiveContainer/refs/heads/main/apps.json")!)
     ]
 
     @State private var statuses: [String: String] = [:]
