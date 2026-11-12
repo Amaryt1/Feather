@@ -213,7 +213,16 @@ extension DownloadManager: URLSessionDownloadDelegate {
 			
 			try FileManager.default.removeFileIfNeeded(at: destinationURL)
 			try FileManager.default.moveItem(at: location, to: destinationURL)
-			
+
+            Task { @MainActor in
+                AppsCatalogPersonalization.shared.recordDownload(
+                    id: download.id,
+                    fileName: suggestedFileName,
+                    sourceURL: download.url,
+                    localURL: destinationURL
+                )
+            }
+
 			try handlePachageFile(url: destinationURL, dl: download)
 		} catch {
 			print("Error handling downloaded file: \(error.localizedDescription)")
