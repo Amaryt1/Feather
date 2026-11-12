@@ -17,7 +17,7 @@ FEEDS = (
     "https://ipa.cypwn.xyz/cypwn.json",
     "https://raw.githubusercontent.com/Nyasami/Ksign/refs/heads/main/repo.json",
     "https://community-apps.sidestore.io/sidecommunity.json",
-    "https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json",
+    "https://raw.githubusercontent.com/LiveContainer/LiveContainer/refs/heads/main/apps.json",
 )
 OUTPUT = Path("Feather/Resources/AppsCatalogSeed.json")
 OUTPUT_GZIP = Path("Feather/Resources/AppsCatalogSeed.json.gz")
