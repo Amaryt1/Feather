@@ -291,6 +291,10 @@ private final class AppsCatalogStore: ObservableObject {
         }
 
         let matchingApp = repository.apps.first { app in
+            // Do not treat missing identifiers and URLs as a wildcard match.
+            guard !entry.bundleIdentifier.isEmpty || entry.appDownloadURL != nil else {
+                return false
+            }
             let identifierMatches = entry.bundleIdentifier.isEmpty || app.id == entry.bundleIdentifier
             let downloadMatches = entry.appDownloadURL == nil
                 || app.downloadURL?.absoluteString == entry.appDownloadURL
@@ -355,16 +359,22 @@ struct AppsCatalogView: View {
                     ProgressView("جارٍ تجهيز مكتبة التطبيقات…")
                     Spacer()
                 } else if !catalog.isReady {
-                    ContentUnavailableView {
-                        Label("تعذر تجهيز التطبيقات", systemImage: "exclamationmark.triangle")
-                    } description: {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.secondary)
+                        Text("تعذر تجهيز التطبيقات")
+                            .font(.headline)
                         Text(catalog.errorMessage ?? "ملف المكتبة غير متاح.")
-                    } actions: {
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                         Button("إعادة المحاولة") {
                             catalog.retryLoadingIndex()
                         }
                         .buttonStyle(.borderedProminent)
                     }
+                    .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if filteredEntries.isEmpty {
                     VStack(spacing: 10) {
@@ -507,6 +517,7 @@ struct AppsCatalogView: View {
         .padding(.vertical, 5)
     }
 
+    @MainActor
     private func open(_ entry: AppsCatalogEntry) {
         guard openingEntryID == nil else { return }
         openingEntryID = entry.id
