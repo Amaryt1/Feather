@@ -36,29 +36,6 @@ struct ExtendedTabbarView: View {
 		.tabViewCustomization($customization)
 	}
 	
-	@ViewBuilder
-	private func _icon(_ title: String, iconUrl: URL?) -> some View {
-		Label {
-			Text(title)
-		} icon: {
-			if let iconURL = iconUrl {
-				LazyImage(url: iconURL) { state in
-					if let image = state.image {
-						image
-					} else {
-						standardIcon
-					}
-				}
-				.processors([.resize(width: 14), .circle()])
-			} else {
-				standardIcon
-			}
-		}
-	}
 
-	
-	var standardIcon: some View {
-		Image(systemName: "app.dashed")
-	}
 }
 
