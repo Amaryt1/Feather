@@ -1,0 +1,55 @@
+name: Apps catalog performance build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Feather/Views/Apps/**"
+      - "Feather/Resources/AppsCatalogSeed.json.gz"
+      - "AltSourceKit/**"
+      - "Feather.xcodeproj/**"
+      - ".github/workflows/apps-catalog-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        destination:
+          - "generic/platform=iOS"
+          - "generic/platform=macOS,variant=Mac Catalyst"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: "true"
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.3.0.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.0.app
+          fi
+          xcodebuild -version
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Feather.xcodeproj \
+            -scheme Feather
+
+      - name: Build Feather
+        run: |
+          xcodebuild \
+            -project Feather.xcodeproj \
+            -scheme Feather \
+            -configuration Release \
+            -destination "${{ matrix.destination }}" \
+            -derivedDataPath "${{ runner.temp }}/FeatherDerivedData" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build
