@@ -142,7 +142,13 @@ private enum AppsCatalogCache {
 }
 
 private enum AppsCatalogBundledSeed {
-    static func load() -> [SourceAppsView.SourceRepositoryContext] {
+    static func load() async -> [SourceAppsView.SourceRepositoryContext] {
+        await Task.detached(priority: .userInitiated) {
+            decode()
+        }.value
+    }
+
+    private static func decode() -> [SourceAppsView.SourceRepositoryContext] {
         guard
             let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed", withExtension: "json"),
             let data = try? Data(contentsOf: fileURL),
@@ -154,25 +160,42 @@ private enum AppsCatalogBundledSeed {
 
         var contexts: [SourceAppsView.SourceRepositoryContext] = []
 
-        // Keep the bundled file compact by storing each source's metadata once.
-        // Decode apps independently so one malformed entry cannot discard a feed.
         for item in items {
             guard
                 let sourceString = item["sourceURL"] as? String,
                 let sourceURL = URL(string: sourceString),
-                var repositoryObject = item["repository"] as? [String: Any],
-                let apps = repositoryObject.removeValue(forKey: "apps") as? [[String: Any]]
+                let repositoryObject = item["repository"] as? [String: Any],
+                let repositoryData = try? JSONSerialization.data(withJSONObject: repositoryObject)
             else {
                 continue
             }
 
+            // Fast path: decode the whole source once. If any unusual app prevents
+            // that, fall back to independent decoding so valid apps are retained.
+            if let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData) {
+                contexts.append(
+                    SourceAppsView.SourceRepositoryContext(
+                        sourceURL: sourceURL,
+                        repository: repository
+                    )
+                )
+                continue
+            }
+
+            guard let apps = repositoryObject["apps"] as? [[String: Any]] else {
+                continue
+            }
+
+            var metadata = repositoryObject
+            metadata.removeValue(forKey: "apps")
+
             for appObject in apps {
-                var singleAppRepository = repositoryObject
+                var singleAppRepository = metadata
                 singleAppRepository["apps"] = [appObject]
 
                 guard
-                    let repositoryData = try? JSONSerialization.data(withJSONObject: singleAppRepository),
-                    let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData)
+                    let singleRepositoryData = try? JSONSerialization.data(withJSONObject: singleAppRepository),
+                    let repository = try? JSONDecoder().decode(ASRepository.self, from: singleRepositoryData)
                 else {
                     continue
                 }
@@ -303,7 +326,7 @@ struct AppsCatalogView: View {
 
             // A bundled snapshot is available before any network request, including
             // on a fresh install with no internet connection.
-            let bundledRepositories = AppsCatalogBundledSeed.load()
+            let bundledRepositories = await AppsCatalogBundledSeed.load()
             if !bundledRepositories.isEmpty {
                 repositories = bundledRepositories
                 await loadRepositories(forceRefresh: true)
