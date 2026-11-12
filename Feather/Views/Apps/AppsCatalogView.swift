@@ -274,7 +274,7 @@ struct AppsCatalogView: View {
         URL(string: "https://ipa.cypwn.xyz/cypwn.json")!,
         URL(string: "https://raw.githubusercontent.com/Nyasami/Ksign/refs/heads/main/repo.json")!,
         URL(string: "https://community-apps.sidestore.io/sidecommunity.json")!,
-        URL(string: "https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json")!
+        URL(string: "https://raw.githubusercontent.com/LiveContainer/LiveContainer/refs/heads/main/apps.json")!
     ]
 
     // Build the catalog index once when repositories change. Rebuilding this
