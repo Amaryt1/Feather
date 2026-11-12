@@ -5,7 +5,7 @@ import NimbleJSON
 import NukeUI
 import SWCompression
 
-private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
+private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
     case all, games, emulators, media, design, social, productivity
     case developer, signing, jailbreak, customization, ai, education, utilities, other
 
@@ -96,13 +96,45 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     }
 }
 
-private struct AppsCatalogEntry: Identifiable {
+private struct AppsCatalogEntry: Identifiable, Sendable {
     let sourceURL: URL?
     let source: ASRepository
     let app: ASRepository.App
-
+    let category: AppsCatalogCategory
     var id: String { "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)" }
-    var category: AppsCatalogCategory { AppsCatalogCategory.classify(app) }
+}
+
+private struct AppsCatalogIndex: Sendable {
+    let repositories: [SourceAppsView.SourceRepositoryContext]
+    let entries: [AppsCatalogEntry]
+    let entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]]
+    let categoryCounts: [AppsCatalogCategory: Int]
+
+    static func build(from repositories: [SourceAppsView.SourceRepositoryContext]) -> AppsCatalogIndex {
+        var seen = Set<String>()
+        var entries: [AppsCatalogEntry] = []
+        entries.reserveCapacity(repositories.reduce(0) { $0 + $1.repository.apps.count })
+        for context in repositories {
+            for app in context.repository.apps {
+                let name = app.currentName
+                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                guard seen.insert("\(bundle)|\(name)").inserted else { continue }
+                entries.append(.init(sourceURL: context.sourceURL, source: context.repository,
+                                     app: app, category: AppsCatalogCategory.classify(app)))
+            }
+        }
+        entries.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
+        var buckets: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
+        var counts: [AppsCatalogCategory: Int] = [:]
+        for entry in entries {
+            buckets[entry.category, default: []].append(entry)
+            counts[entry.category, default: 0] += 1
+        }
+        return .init(repositories: repositories, entries: entries,
+                     entriesByCategory: buckets, categoryCounts: counts)
+    }
 }
 
 private enum AppsCatalogCache {
@@ -143,9 +175,18 @@ private enum AppsCatalogCache {
 }
 
 private enum AppsCatalogBundledSeed {
-    static func load() async -> [SourceAppsView.SourceRepositoryContext] {
+    private struct Payload: Decodable {
+        struct Source: Decodable {
+            let sourceURL: String
+            let repository: ASRepository
+        }
+        let sources: [Source]
+    }
+
+    static func load() async -> AppsCatalogIndex {
         await Task.detached(priority: .userInitiated) {
-            decode()
+            let repositories = decode()
+            return AppsCatalogIndex.build(from: repositories)
         }.value
     }
 
@@ -153,68 +194,50 @@ private enum AppsCatalogBundledSeed {
         guard
             let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed.json", withExtension: "gz"),
             let compressedData = try? Data(contentsOf: fileURL),
-            let data = try? GzipArchive.unarchive(archive: compressedData),
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let items = root["sources"] as? [[String: Any]]
-        else {
-            return []
+            let data = try? GzipArchive.unarchive(archive: compressedData)
+        else { return [] }
+
+        // Decode the bundled JSON directly. Avoid constructing and serializing
+        // a huge [String: Any] graph before decoding each repository again.
+        if let payload = try? JSONDecoder().decode(Payload.self, from: data) {
+            return payload.sources.compactMap { item in
+                guard let url = URL(string: item.sourceURL) else { return nil }
+                return .init(sourceURL: url, repository: item.repository)
+            }
         }
 
-        var contexts: [SourceAppsView.SourceRepositoryContext] = []
+        // Keep a tolerant fallback for repositories containing an unusual app.
+        guard
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let items = root["sources"] as? [[String: Any]]
+        else { return [] }
 
+        var contexts: [SourceAppsView.SourceRepositoryContext] = []
         for item in items {
             guard
                 let sourceString = item["sourceURL"] as? String,
                 let sourceURL = URL(string: sourceString),
-                let repositoryObject = item["repository"] as? [String: Any],
-                let repositoryData = try? JSONSerialization.data(withJSONObject: repositoryObject)
-            else {
-                continue
-            }
-
-            // Fast path: decode the whole source once. If any unusual app prevents
-            // that, fall back to independent decoding so valid apps are retained.
+                let object = item["repository"] as? [String: Any],
+                let repositoryData = try? JSONSerialization.data(withJSONObject: object)
+            else { continue }
             if let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData) {
-                contexts.append(
-                    SourceAppsView.SourceRepositoryContext(
-                        sourceURL: sourceURL,
-                        repository: repository
-                    )
-                )
+                contexts.append(.init(sourceURL: sourceURL, repository: repository))
                 continue
             }
-
-            guard let apps = repositoryObject["apps"] as? [[String: Any]] else {
-                continue
-            }
-
-            var metadata = repositoryObject
+            guard let apps = object["apps"] as? [[String: Any]] else { continue }
+            var metadata = object
             metadata.removeValue(forKey: "apps")
-
-            for appObject in apps {
-                var singleAppRepository = metadata
-                singleAppRepository["apps"] = [appObject]
-
-                guard
-                    let singleRepositoryData = try? JSONSerialization.data(withJSONObject: singleAppRepository),
-                    let repository = try? JSONDecoder().decode(ASRepository.self, from: singleRepositoryData)
-                else {
-                    continue
-                }
-
-                contexts.append(
-                    SourceAppsView.SourceRepositoryContext(
-                        sourceURL: sourceURL,
-                        repository: repository
-                    )
-                )
+            for app in apps {
+                var single = metadata
+                single["apps"] = [app]
+                guard let data = try? JSONSerialization.data(withJSONObject: single),
+                      let repository = try? JSONDecoder().decode(ASRepository.self, from: data) else { continue }
+                contexts.append(.init(sourceURL: sourceURL, repository: repository))
             }
         }
-
         return contexts
     }
 }
-
 struct AppsCatalogView: View {
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
     @State private var selectedCategory: AppsCatalogCategory = .all
@@ -235,23 +258,27 @@ struct AppsCatalogView: View {
     // 27k-app index from body-computed properties made every category redraw
     // repeatedly scan the entire catalog.
     @State private var catalogEntries: [AppsCatalogEntry] = []
+    @State private var entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
+    @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
 
-    private func rebuildEntries() {
-        var seen = Set<String>()
-        catalogEntries = repositories.flatMap { context in
-            context.repository.apps.compactMap { app in
-                let name = app.currentName
-                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                let key = "\(bundle)|\(name)"
-                guard seen.insert(key).inserted else { return nil }
-                return AppsCatalogEntry(sourceURL: context.sourceURL, source: context.repository, app: app)
-            }
-        }
-        .sorted { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
+    private func apply(_ index: AppsCatalogIndex) {
+        repositories = index.repositories
+        catalogEntries = index.entries
+        entriesByCategory = index.entriesByCategory
+        categoryCounts = index.categoryCounts
+    }
+
+    @MainActor
+    private func rebuildEntries() async {
+        let snapshot = repositories
+        let index = await Task.detached(priority: .userInitiated) {
+            AppsCatalogIndex.build(from: snapshot)
+        }.value
+        catalogEntries = index.entries
+        entriesByCategory = index.entriesByCategory
+        categoryCounts = index.categoryCounts
     }
 
     private var visibleCategories: [AppsCatalogCategory] {
@@ -259,11 +286,12 @@ struct AppsCatalogView: View {
     }
 
     private var filteredEntries: [AppsCatalogEntry] {
-        entries.filter { entry in
-            let categoryMatches = selectedCategory == .all || entry.category == selectedCategory
-            let searchable = [entry.app.currentName, entry.app.currentDescription ?? "",
-                              entry.app.developer ?? ""].joined(separator: " ")
-            return categoryMatches && (searchText.isEmpty || searchable.localizedCaseInsensitiveContains(searchText))
+        let selectedEntries = selectedCategory == .all ? entries : entriesByCategory[selectedCategory, default: []]
+        guard !searchText.isEmpty else { return selectedEntries }
+        return selectedEntries.filter { entry in
+            entry.app.currentName.localizedCaseInsensitiveContains(searchText)
+                || (entry.app.currentDescription?.localizedCaseInsensitiveContains(searchText) ?? false)
+                || (entry.app.developer?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
 
@@ -334,10 +362,9 @@ struct AppsCatalogView: View {
             // Keep the loading state visible while the bundled snapshot is decoded.
             // The complete bundled catalog is the first screen; do not immediately
             // replace it with a slow, incremental network stream on every entry.
-            let bundledRepositories = await AppsCatalogBundledSeed.load()
-            if !bundledRepositories.isEmpty {
-                repositories = bundledRepositories
-                rebuildEntries()
+            let bundledIndex = await AppsCatalogBundledSeed.load()
+            if !bundledIndex.entries.isEmpty {
+                apply(bundledIndex)
                 hasLoaded = true
                 isLoading = false
                 return
@@ -357,7 +384,7 @@ struct AppsCatalogView: View {
                 ForEach(visibleCategories) { category in
                     let selected = selectedCategory == category
                     Button {
-                        withAnimation(.snappy(duration: 0.2)) { selectedCategory = category }
+                        selectedCategory = category
                     } label: {
                         Label("\(category.title) · \(categoryCount(category))", systemImage: category.icon)
                             .font(.subheadline.weight(.medium))
@@ -375,7 +402,7 @@ struct AppsCatalogView: View {
     }
 
     private func categoryCount(_ category: AppsCatalogCategory) -> Int {
-        category == .all ? entries.count : entries.filter { $0.category == category }.count
+        category == .all ? entries.count : categoryCounts[category, default: 0]
     }
 
     @ViewBuilder
@@ -450,7 +477,7 @@ struct AppsCatalogView: View {
             }
 
             // Publish one prebuilt index after restoring all cached feeds.
-            rebuildEntries()
+            await rebuildEntries()
 
             // All feeds are already cached: show the full catalog immediately.
             if missingURLs.isEmpty { return }
@@ -476,7 +503,6 @@ struct AppsCatalogView: View {
                         await MainActor.run {
                             repositories.removeAll { $0.sourceURL == url }
                             repositories.append(contentsOf: fetchedContexts)
-                            rebuildEntries()
                         }
                         return true
                     } catch {
@@ -491,6 +517,10 @@ struct AppsCatalogView: View {
                 }
             }
         }
+
+        // Rebuild once after all feed tasks finish, avoiding overlapping full
+        // catalog indexes while concurrent refreshes complete.
+        await rebuildEntries()
     }
 }
 
