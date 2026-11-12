@@ -338,21 +338,36 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
     private var task: URLSessionDataTask?
     private var buffer: [UInt8] = []
     private var searchIndex = 0
+    private var readIndex = 0
     private var appsArrayStarted = false
     private var appsArrayFinished = false
     private var repositoryPrefix = Data()
 
+    // Persist the JSON scanner state across network callbacks. Large app objects
+    // are therefore scanned only once, rather than from their first byte per chunk.
+    private var objectStartIndex: Int?
+    private var objectScanIndex = 0
+    private var objectDepth = 0
+    private var objectInString = false
+    private var objectEscaped = false
+
+    // URLSession invokes this loader on one serial delegate queue.
+    private let decoder = JSONDecoder()
+
     private static let appsKey = Array("\"apps\"".utf8)
+    private static let whitespace: Set<UInt8> = [32, 9, 10, 13]
 
     static func stream(from url: URL) -> AsyncThrowingStream<ASRepository, Error> {
         AsyncThrowingStream { continuation in
             let loader = AppsCatalogStreamingLoader()
             loader.continuation = continuation
 
+            let delegateQueue = OperationQueue()
+            delegateQueue.maxConcurrentOperationCount = 1
             let session = URLSession(
                 configuration: .default,
                 delegate: loader,
-                delegateQueue: OperationQueue()
+                delegateQueue: delegateQueue
             )
             loader.session = session
             let task = session.dataTask(with: url)
@@ -410,7 +425,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                 if candidate.elementsEqual(Self.appsKey) {
                     var lookahead = keyStart + Self.appsKey.count
                     while lookahead < buffer.count,
-                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                          Self.whitespace.contains(buffer[lookahead]) {
                         lookahead += 1
                     }
                     // The key may be split from its colon or opening bracket
@@ -425,7 +440,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                     }
                     lookahead += 1
                     while lookahead < buffer.count,
-                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                          Self.whitespace.contains(buffer[lookahead]) {
                         lookahead += 1
                     }
                     guard lookahead < buffer.count else {
@@ -441,7 +456,7 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                             continue
                         }
                         repositoryPrefix = candidatePrefix
-                        buffer.removeFirst(lookahead + 1)
+                        readIndex = lookahead + 1
                         searchIndex = 0
                         appsArrayStarted = true
                         break
@@ -454,65 +469,83 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
             guard appsArrayStarted else {
                 // Retain enough trailing bytes to recognize a key split at a chunk boundary.
                 if searchIndex > Self.appsKey.count {
-                    buffer.removeFirst(searchIndex - Self.appsKey.count)
+                    let discardCount = searchIndex - Self.appsKey.count
+                    buffer.removeFirst(discardCount)
                     searchIndex = Self.appsKey.count
                 }
                 return
             }
         }
 
-        while !buffer.isEmpty {
-            while !buffer.isEmpty,
-                  [UInt8(32), 9, 10, 13, 44].contains(buffer[0]) {
-                buffer.removeFirst()
+        while readIndex < buffer.count {
+            while readIndex < buffer.count,
+                  Self.whitespace.contains(buffer[readIndex]) || buffer[readIndex] == 44 {
+                readIndex += 1
             }
-            guard let first = buffer.first else { return }
+            guard readIndex < buffer.count else { return }
 
-            if first == 93 {
+            if buffer[readIndex] == 93 {
                 appsArrayFinished = true
-                buffer.removeFirst()
+                readIndex += 1
                 return
             }
 
-            guard first == 123 else {
+            guard buffer[readIndex] == 123 else {
                 // Ignore unexpected separators while remaining inside the apps array.
-                buffer.removeFirst()
+                readIndex += 1
                 continue
             }
 
-            var depth = 0
-            var inString = false
-            var escaped = false
-            var endIndex: Int?
+            if objectStartIndex == nil {
+                objectStartIndex = readIndex
+                objectScanIndex = readIndex
+                objectDepth = 0
+                objectInString = false
+                objectEscaped = false
+            }
 
-            for index in buffer.indices {
-                let byte = buffer[index]
-                if inString {
-                    if escaped {
-                        escaped = false
+            guard let objectStart = objectStartIndex else { return }
+            var completedEnd: Int?
+
+            while objectScanIndex < buffer.count {
+                let byte = buffer[objectScanIndex]
+                if objectInString {
+                    if objectEscaped {
+                        objectEscaped = false
                     } else if byte == 92 {
-                        escaped = true
+                        objectEscaped = true
                     } else if byte == 34 {
-                        inString = false
+                        objectInString = false
                     }
                 } else {
                     if byte == 34 {
-                        inString = true
+                        objectInString = true
                     } else if byte == 123 {
-                        depth += 1
+                        objectDepth += 1
                     } else if byte == 125 {
-                        depth -= 1
-                        if depth == 0 {
-                            endIndex = index
+                        objectDepth -= 1
+                        if objectDepth == 0 {
+                            completedEnd = objectScanIndex
+                            objectScanIndex += 1
                             break
                         }
                     }
                 }
+                objectScanIndex += 1
             }
 
-            guard let endIndex else { return }
-            let appData = Data(buffer[0...endIndex])
-            buffer.removeFirst(endIndex + 1)
+            guard let endIndex = completedEnd else {
+                // Resume at the first unseen byte when the next network chunk arrives.
+                return
+            }
+
+            let appData = Data(buffer[objectStart...endIndex])
+            readIndex = endIndex + 1
+            objectStartIndex = nil
+            objectScanIndex = 0
+            objectDepth = 0
+            objectInString = false
+            objectEscaped = false
 
             // A one-app repository keeps the existing app detail and download
             // components working while the rest of the feed is still arriving.
@@ -521,9 +554,24 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
             repositoryData.append(appData)
             repositoryData.append(Data("]}".utf8))
 
-            if let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData) {
+            if let repository = try? decoder.decode(ASRepository.self, from: repositoryData) {
                 continuation?.yield(repository)
             }
+
+            compactBufferIfNeeded()
         }
+    }
+
+    /// Avoid repeated Array.removeFirst calls while consuming individual apps.
+    /// Compact occasionally, and only between complete JSON objects.
+    private func compactBufferIfNeeded() {
+        guard objectStartIndex == nil,
+              readIndex >= 65_536,
+              readIndex * 2 >= buffer.count else { return }
+
+        let discarded = readIndex
+        buffer.removeFirst(discarded)
+        readIndex = 0
+        searchIndex = max(0, searchIndex - discarded)
     }
 }
