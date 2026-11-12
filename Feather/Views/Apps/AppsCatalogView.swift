@@ -494,7 +494,7 @@ struct AppsCatalogView: View {
             Spacer(minLength: 0)
 
             Menu {
-                ForEach(AppsCatalogSort.allCases, id: \\.self) { option in
+                ForEach(AppsCatalogSort.allCases, id: \.rawValue) { option in
                     Button {
                         sortOption = option
                     } label: {
