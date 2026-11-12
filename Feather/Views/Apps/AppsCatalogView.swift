@@ -5,7 +5,7 @@ import NimbleJSON
 import NukeUI
 import SWCompression
 
-private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
+private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
     case all, games, emulators, media, design, social, productivity
     case developer, signing, jailbreak, customization, ai, education, utilities, other
 
