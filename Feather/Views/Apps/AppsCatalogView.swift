@@ -112,7 +112,6 @@ struct AppsCatalogView: View {
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var hadFailures = false
-    private let dataService = NBFetchService()
 
     // These feed URLs are intentionally private to the app and are never displayed as source entries.
     private let feedURLs: [URL] = [
@@ -294,24 +293,237 @@ struct AppsCatalogView: View {
         guard !isLoading else { return }
         isLoading = true
         hadFailures = false
+        repositories.removeAll()
         defer { isLoading = false }
 
-        var loaded: [SourceAppsView.SourceRepositoryContext] = []
-        for url in feedURLs {
-            let repository: ASRepository? = await withCheckedContinuation { continuation in
-                dataService.fetch(from: url) { (result: Result<ASRepository, Error>) in
-                    switch result {
-                    case .success(let value): continuation.resume(returning: value)
-                    case .failure: continuation.resume(returning: nil)
+        // Each repository is streamed independently. Every decoded app is published
+        // immediately instead of waiting for the complete repositories to download.
+        await withTaskGroup(of: Bool.self) { group in
+            for url in feedURLs {
+                group.addTask {
+                    do {
+                        for try await partialRepository in AppsCatalogStreamingLoader.stream(from: url) {
+                            await MainActor.run {
+                                let context = SourceAppsView.SourceRepositoryContext(
+                                    sourceURL: url,
+                                    repository: partialRepository
+                                )
+                                repositories.append(context)
+                            }
+                        }
+                        return true
+                    } catch {
+                        return false
                     }
                 }
             }
-            if let repository {
-                loaded.append(SourceAppsView.SourceRepositoryContext(sourceURL: url, repository: repository))
-            } else {
-                hadFailures = true
+
+            for await succeeded in group {
+                if !succeeded {
+                    hadFailures = true
+                }
             }
         }
-        repositories = loaded
+    }
+}
+
+// MARK: - Incremental repository JSON reader
+
+/// Reads the top-level "apps" array as the response arrives and decodes one app
+/// object at a time. The small repository wrapper preserves compatibility with
+/// the existing SourceAppsDetailView and DownloadButtonView APIs.
+private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private var continuation: AsyncThrowingStream<ASRepository, Error>.Continuation?
+    private var session: URLSession?
+    private var task: URLSessionDataTask?
+    private var buffer: [UInt8] = []
+    private var searchIndex = 0
+    private var appsArrayStarted = false
+    private var appsArrayFinished = false
+    private var repositoryPrefix = Data()
+
+    private static let appsKey = Array("\"apps\"".utf8)
+
+    static func stream(from url: URL) -> AsyncThrowingStream<ASRepository, Error> {
+        AsyncThrowingStream { continuation in
+            let loader = AppsCatalogStreamingLoader()
+            loader.continuation = continuation
+
+            let session = URLSession(
+                configuration: .default,
+                delegate: loader,
+                delegateQueue: OperationQueue()
+            )
+            loader.session = session
+            let task = session.dataTask(with: url)
+            loader.task = task
+
+            continuation.onTermination = { @Sendable _ in
+                session.invalidateAndCancel()
+            }
+            task.resume()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        if let response = response as? HTTPURLResponse,
+           !(200...299).contains(response.statusCode) {
+            completionHandler(.cancel)
+            continuation?.finish(throwing: URLError(.badServerResponse))
+            return
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        buffer.append(contentsOf: data)
+        consumeAvailableApps()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error {
+            continuation?.finish(throwing: error)
+        } else if !appsArrayStarted || !appsArrayFinished {
+            continuation?.finish(throwing: URLError(.cannotParseResponse))
+        } else {
+            continuation?.finish()
+        }
+        session.finishTasksAndInvalidate()
+    }
+
+    private func consumeAvailableApps() {
+        guard !appsArrayFinished else { return }
+
+        if !appsArrayStarted {
+            while searchIndex + Self.appsKey.count <= buffer.count {
+                let keyStart = searchIndex
+                let candidate = buffer[keyStart..<(keyStart + Self.appsKey.count)]
+                if candidate.elementsEqual(Self.appsKey) {
+                    var lookahead = keyStart + Self.appsKey.count
+                    while lookahead < buffer.count,
+                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                        lookahead += 1
+                    }
+                    // The key may be split from its colon or opening bracket
+                    // across network chunks. Keep the key position for the next chunk.
+                    guard lookahead < buffer.count else {
+                        searchIndex = keyStart
+                        return
+                    }
+                    guard buffer[lookahead] == 58 else {
+                        searchIndex = keyStart + 1
+                        continue
+                    }
+                    lookahead += 1
+                    while lookahead < buffer.count,
+                          [UInt8(32), 9, 10, 13].contains(buffer[lookahead]) {
+                        lookahead += 1
+                    }
+                    guard lookahead < buffer.count else {
+                        searchIndex = keyStart
+                        return
+                    }
+                    if buffer[lookahead] == 91 {
+                        let candidatePrefix = Data(buffer[..<keyStart])
+                        var validationData = candidatePrefix
+                        validationData.append(Data("\"apps\":[]}".utf8))
+                        guard (try? JSONSerialization.jsonObject(with: validationData)) != nil else {
+                            searchIndex = keyStart + 1
+                            continue
+                        }
+                        repositoryPrefix = candidatePrefix
+                        buffer.removeFirst(lookahead + 1)
+                        searchIndex = 0
+                        appsArrayStarted = true
+                        break
+                    }
+                    searchIndex = keyStart + 1
+                } else {
+                    searchIndex += 1
+                }
+            }
+            guard appsArrayStarted else {
+                // Retain enough trailing bytes to recognize a key split at a chunk boundary.
+                if searchIndex > Self.appsKey.count {
+                    buffer.removeFirst(searchIndex - Self.appsKey.count)
+                    searchIndex = Self.appsKey.count
+                }
+                return
+            }
+        }
+
+        while !buffer.isEmpty {
+            while !buffer.isEmpty,
+                  [UInt8(32), 9, 10, 13, 44].contains(buffer[0]) {
+                buffer.removeFirst()
+            }
+            guard let first = buffer.first else { return }
+
+            if first == 93 {
+                appsArrayFinished = true
+                buffer.removeFirst()
+                return
+            }
+
+            guard first == 123 else {
+                // Ignore unexpected separators while remaining inside the apps array.
+                buffer.removeFirst()
+                continue
+            }
+
+            var depth = 0
+            var inString = false
+            var escaped = false
+            var endIndex: Int?
+
+            for index in buffer.indices {
+                let byte = buffer[index]
+                if inString {
+                    if escaped {
+                        escaped = false
+                    } else if byte == 92 {
+                        escaped = true
+                    } else if byte == 34 {
+                        inString = false
+                    }
+                } else {
+                    if byte == 34 {
+                        inString = true
+                    } else if byte == 123 {
+                        depth += 1
+                    } else if byte == 125 {
+                        depth -= 1
+                        if depth == 0 {
+                            endIndex = index
+                            break
+                        }
+                    }
+                }
+            }
+
+            guard let endIndex else { return }
+            let appData = Data(buffer[0...endIndex])
+            buffer.removeFirst(endIndex + 1)
+
+            // A one-app repository keeps the existing app detail and download
+            // components working while the rest of the feed is still arriving.
+            var repositoryData = repositoryPrefix
+            repositoryData.append(Data("\"apps\":[".utf8))
+            repositoryData.append(appData)
+            repositoryData.append(Data("]}".utf8))
+
+            if let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData) {
+                continuation?.yield(repository)
+            }
+        }
     }
 }
