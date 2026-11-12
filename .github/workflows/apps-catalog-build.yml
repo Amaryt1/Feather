@@ -1,6 +1,14 @@
 name: Apps catalog performance build
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "Feather/Views/Apps/**"
+      - "Feather/Resources/AppsCatalogSeed.json.gz"
+      - "AltSourceKit/**"
+      - "Feather.xcodeproj/**"
+      - ".github/workflows/apps-catalog-build.yml"
   pull_request:
     branches: [main]
     paths:
