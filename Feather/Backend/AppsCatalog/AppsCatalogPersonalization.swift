@@ -286,3 +286,128 @@ private struct AppsCatalogDownloadRow: View {
         .padding(.vertical, 5)
     }
 }
+
+
+struct AppsCatalogSourcesStatusView: View {
+    private let feeds: [(name: String, url: URL)] = [
+        ("FastSign", URL(string: "https://fastsign.dev/repo.json")!),
+        ("AppTesters", URL(string: "https://repository.apptesters.org")!),
+        ("CyPwn", URL(string: "https://ipa.cypwn.xyz/cypwn.json")!)
+    ]
+
+    @State private var statuses: [String: String] = [:]
+    @State private var checking = false
+    @State private var lastChecked: Date?
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    ForEach(feeds, id: \.name) { feed in
+                        HStack(spacing: 12) {
+                            Image(systemName: statusIcon(for: feed.name))
+                                .foregroundStyle(statusColor(for: feed.name))
+                                .font(.title3)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(feed.name).font(.headline)
+                                Text(statuses[feed.name] ?? "لم يتم الفحص بعد")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(feed.url.host ?? "")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                } header: {
+                    Text("حالة المصادر الخاصة")
+                } footer: {
+                    Text("يفحص هذا القسم اتصال المصدر واستجابة JSON. نجاح الاتصال لا يعني أن كل ملف IPA داخله صالح أو قابل للتثبيت.")
+                }
+
+                if let lastChecked {
+                    Section {
+                        LabeledContent("آخر فحص", value: lastChecked.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("عدد المصادر", value: "\(feeds.count)")
+                        LabeledContent("المصادر المكررة", value: "\(feeds.count - Set(feeds.map { $0.url.absoluteString }).count)")
+                    }
+                }
+            }
+            .navigationTitle("صحة المصادر")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await checkSources() }
+                    } label: {
+                        if checking {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                    .disabled(checking)
+                    .accessibilityLabel("فحص المصادر")
+                }
+            }
+            .task {
+                if statuses.isEmpty { await checkSources() }
+            }
+        }
+    }
+
+    private func statusIcon(for name: String) -> String {
+        let value = statuses[name] ?? ""
+        if value.hasPrefix("متصل") { return "checkmark.circle.fill" }
+        if value.isEmpty { return "circle.dashed" }
+        return "exclamationmark.triangle.fill"
+    }
+
+    private func statusColor(for name: String) -> Color {
+        let value = statuses[name] ?? ""
+        if value.hasPrefix("متصل") { return .green }
+        if value.isEmpty { return .secondary }
+        return .orange
+    }
+
+    @MainActor
+    private func checkSources() async {
+        guard !checking else { return }
+        checking = true
+        defer { checking = false }
+
+        let results = await withTaskGroup(of: (String, String).self, returning: [String: String].self) { group in
+            for feed in feeds {
+                group.addTask {
+                    do {
+                        var request = URLRequest(url: feed.url)
+                        request.timeoutInterval = 20
+                        request.setValue("Feather/AppsCatalog", forHTTPHeaderField: "User-Agent")
+                        let (data, response) = try await URLSession.shared.data(for: request)
+                        guard let http = response as? HTTPURLResponse,
+                              (200..<300).contains(http.statusCode) else {
+                            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                            return (feed.name, "خطأ HTTP: \(code)")
+                        }
+                        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                            return (feed.name, "استجابة JSON غير متوقعة")
+                        }
+                        let count = (object["apps"] as? [Any])?.count
+                            ?? (object["sources"] as? [Any])?.count
+                        if let count {
+                            return (feed.name, "متصل · \(count) عنصر")
+                        }
+                        return (feed.name, "متصل · JSON صالح")
+                    } catch {
+                        return (feed.name, "تعذر الاتصال: \(error.localizedDescription)")
+                    }
+                }
+            }
+            var values: [String: String] = [:]
+            for await (name, status) in group { values[name] = status }
+            return values
+        }
+        statuses = results
+        lastChecked = Date()
+    }
+}
