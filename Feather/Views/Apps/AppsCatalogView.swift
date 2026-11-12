@@ -433,7 +433,14 @@ private final class AppsCatalogStreamingLoader: NSObject, URLSessionDataDelegate
                         return
                     }
                     if buffer[lookahead] == 91 {
-                        repositoryPrefix = Data(buffer[..<keyStart])
+                        let candidatePrefix = Data(buffer[..<keyStart])
+                        var validationData = candidatePrefix
+                        validationData.append(Data("\"apps\":[]}".utf8))
+                        guard (try? JSONSerialization.jsonObject(with: validationData)) != nil else {
+                            searchIndex = keyStart + 1
+                            continue
+                        }
+                        repositoryPrefix = candidatePrefix
                         buffer.removeFirst(lookahead + 1)
                         searchIndex = 0
                         appsArrayStarted = true
