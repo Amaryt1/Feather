@@ -220,7 +220,7 @@ struct AppsCatalogView: View {
     @State private var selectedCategory: AppsCatalogCategory = .all
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var hasLoaded = false
     @State private var hadFailures = false
 
