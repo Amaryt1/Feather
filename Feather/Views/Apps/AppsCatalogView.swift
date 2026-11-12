@@ -296,22 +296,34 @@ struct AppsCatalogView: View {
         hadFailures = false
         defer { isLoading = false }
 
-        var loaded: [SourceAppsView.SourceRepositoryContext] = []
-        for url in feedURLs {
-            let repository: ASRepository? = await withCheckedContinuation { continuation in
-                dataService.fetch(from: url) { (result: Result<ASRepository, Error>) in
-                    switch result {
-                    case .success(let value): continuation.resume(returning: value)
-                    case .failure: continuation.resume(returning: nil)
+        // Fetch all feeds concurrently so a slow repository does not block the others.
+        await withTaskGroup(of: (URL, ASRepository?).self) { group in
+            for url in feedURLs {
+                group.addTask {
+                    let repository: ASRepository? = await withCheckedContinuation { continuation in
+                        dataService.fetch(from: url) { (result: Result<ASRepository, Error>) in
+                            switch result {
+                            case .success(let value): continuation.resume(returning: value)
+                            case .failure: continuation.resume(returning: nil)
+                            }
+                        }
                     }
+                    return (url, repository)
                 }
             }
-            if let repository {
-                loaded.append(SourceAppsView.SourceRepositoryContext(sourceURL: url, repository: repository))
-            } else {
-                hadFailures = true
+
+            for await (url, repository) in group {
+                if let repository {
+                    let context = SourceAppsView.SourceRepositoryContext(sourceURL: url, repository: repository)
+                    if let index = repositories.firstIndex(where: { $0.sourceURL == url }) {
+                        repositories[index] = context
+                    } else {
+                        repositories.append(context)
+                    }
+                } else {
+                    hadFailures = true
+                }
             }
         }
-        repositories = loaded
     }
 }
