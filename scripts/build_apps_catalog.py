@@ -59,7 +59,7 @@ def fetch_repository(url: str) -> dict:
 
 
 def main() -> None:
-    bundled_items: list[dict] = []
+    bundled_sources: list[dict] = []
     source_counts: dict[str, int] = {}
 
     for feed_url in FEEDS:
@@ -67,7 +67,7 @@ def main() -> None:
         apps = repository.get("apps", [])
         metadata = {key: value for key, value in repository.items() if key != "apps"}
         source_url = repository.get("sourceURL") or feed_url
-        count = 0
+        usable_apps: list[dict] = []
 
         for original_app in apps:
             if not isinstance(original_app, dict):
@@ -85,17 +85,19 @@ def main() -> None:
             if app.get("marketplaceID"):
                 continue
 
-            one_app_repository = dict(metadata)
-            one_app_repository["apps"] = [app]
-            bundled_items.append({
-                "sourceURL": source_url,
-                "repository": one_app_repository,
-            })
-            count += 1
+            usable_apps.append(app)
 
-        if count == 0:
+        if not usable_apps:
             raise ValueError(f"feed contains no usable apps: {feed_url}")
-        source_counts[feed_url] = count
+
+        # Store repository metadata once rather than duplicating it for every app.
+        bundled_repository = dict(metadata)
+        bundled_repository["apps"] = usable_apps
+        bundled_sources.append({
+            "sourceURL": source_url,
+            "repository": bundled_repository,
+        })
+        source_counts[feed_url] = len(usable_apps)
 
     if len(source_counts) != len(FEEDS):
         raise RuntimeError("not all configured feeds were included")
@@ -103,7 +105,7 @@ def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "sources": bundled_items,
+        "sources": bundled_sources,
     }
     temporary = OUTPUT.with_suffix(".json.tmp")
     temporary.write_text(
@@ -115,7 +117,7 @@ def main() -> None:
     print("Bundled app counts:")
     for feed, count in source_counts.items():
         print(f"- {feed}: {count}")
-    print(f"Total bundled apps: {len(bundled_items)}")
+    print(f"Total bundled apps: {sum(source_counts.values())}")
     print(f"Output: {OUTPUT}")
 
 
