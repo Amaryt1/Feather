@@ -142,27 +142,32 @@ private enum AppsCatalogCache {
 }
 
 private enum AppsCatalogBundledSeed {
-    private struct SeedFile: Decodable {
-        struct Item: Decodable {
-            let sourceURL: URL
-            let repository: ASRepository
-        }
-        let sources: [Item]
-    }
-
     static func load() -> [SourceAppsView.SourceRepositoryContext] {
         guard
             let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed", withExtension: "json"),
             let data = try? Data(contentsOf: fileURL),
-            let seed = try? JSONDecoder().decode(SeedFile.self, from: data)
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let items = root["sources"] as? [[String: Any]]
         else {
             return []
         }
 
-        return seed.sources.map {
-            SourceAppsView.SourceRepositoryContext(
-                sourceURL: $0.sourceURL,
-                repository: $0.repository
+        // Decode entries independently: one malformed feed item must not hide
+        // every other valid app in the bundled snapshot.
+        return items.compactMap { item in
+            guard
+                let sourceString = item["sourceURL"] as? String,
+                let sourceURL = URL(string: sourceString),
+                let repositoryObject = item["repository"],
+                let repositoryData = try? JSONSerialization.data(withJSONObject: repositoryObject),
+                let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData)
+            else {
+                return nil
+            }
+
+            return SourceAppsView.SourceRepositoryContext(
+                sourceURL: sourceURL,
+                repository: repository
             )
         }
     }
