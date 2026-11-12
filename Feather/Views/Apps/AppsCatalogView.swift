@@ -435,7 +435,9 @@ struct AppsCatalogView: View {
                 AppsCatalogDownloadsView()
             }
             .sheet(isPresented: $isSourcesStatusPresented) {
-                AppsCatalogSourcesStatusView()
+                AppsCatalogSourcesStatusView(onRefresh: { url in
+                    await loadRepositories(forceRefresh: true, sourceURL: url)
+                })
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
@@ -593,7 +595,7 @@ struct AppsCatalogView: View {
     }
 
     @MainActor
-    private func loadRepositories(forceRefresh: Bool = false) async {
+    private func loadRepositories(forceRefresh: Bool = false, sourceURL: URL? = nil) async {
         guard !isLoading else { return }
         isLoading = true
         hadFailures = false
@@ -602,7 +604,9 @@ struct AppsCatalogView: View {
         // On normal entry, restore complete repositories from disk first.
         // Only sources without a valid local copy need a network request.
         let urlsToLoad: [URL]
-        if forceRefresh {
+        if let sourceURL {
+            urlsToLoad = [sourceURL]
+        } else if forceRefresh {
             urlsToLoad = feedURLs
         } else {
             var missingURLs: [URL] = []
