@@ -15,6 +15,9 @@ FEEDS = (
     "https://fastsign.dev/repo.json",
     "https://repository.apptesters.org",
     "https://ipa.cypwn.xyz/cypwn.json",
+    "https://raw.githubusercontent.com/Nyasami/Ksign/refs/heads/main/repo.json",
+    "https://community-apps.sidestore.io/sidecommunity.json",
+    "https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json",
 )
 OUTPUT = Path("Feather/Resources/AppsCatalogSeed.json")
 OUTPUT_GZIP = Path("Feather/Resources/AppsCatalogSeed.json.gz")
@@ -76,12 +79,10 @@ def main() -> None:
                 continue
             app = dict(original_app)
 
-            # AltSourceKit requires an icon URL for each app. Repositories that
-            # define only a repository icon can safely use it as a fallback.
+            # Use the repository icon when an individual app has no icon.
+            # Keep entries without either icon; Feather renders its placeholder.
             if not app.get("iconURL") and repository.get("iconURL"):
                 app["iconURL"] = repository["iconURL"]
-            if not app.get("iconURL"):
-                continue
 
             # Feather does not support App Store PAL marketplace entries.
             if app.get("marketplaceID"):
