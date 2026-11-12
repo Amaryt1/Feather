@@ -3,6 +3,7 @@ import AltSourceKit
 import NimbleViews
 import NimbleJSON
 import NukeUI
+import SWCompression
 
 private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
     case all, games, emulators, media, design, social, productivity
@@ -150,8 +151,9 @@ private enum AppsCatalogBundledSeed {
 
     private static func decode() -> [SourceAppsView.SourceRepositoryContext] {
         guard
-            let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed", withExtension: "json"),
-            let data = try? Data(contentsOf: fileURL),
+            let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed.json", withExtension: "gz"),
+            let compressedData = try? Data(contentsOf: fileURL),
+            let data = try? GzipArchive.unarchive(archive: compressedData),
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let items = root["sources"] as? [[String: Any]]
         else {
