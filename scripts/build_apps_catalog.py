@@ -10,7 +10,6 @@ import time
 import unicodedata
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -223,15 +222,19 @@ def main() -> None:
                 continue
             seen_apps.add(dedupe_key)
 
+            subtitle = app.get("subtitle") or app.get("localizedDescription")
+            developer = app.get("developerName")
+            app_download_url = app.get("downloadURL")
+
             indexed_apps.append({
-                "id": f"{source_index}:{app_index}:{bundle_id}:{app.get('downloadURL') or ''}",
+                "id": f"{source_index}:{app_index}:{bundle_id}:{app_download_url if isinstance(app_download_url, str) else ''}",
                 "sourceIndex": source_index,
                 "appIndex": app_index,
                 "bundleIdentifier": bundle_id,
-                "appDownloadURL": app.get("downloadURL"),
+                "appDownloadURL": app_download_url if isinstance(app_download_url, str) else None,
                 "name": display_name,
-                "subtitle": app.get("subtitle") or app.get("localizedDescription"),
-                "developer": app.get("developerName"),
+                "subtitle": subtitle if isinstance(subtitle, str) else None,
+                "developer": developer if isinstance(developer, str) else None,
                 "iconURL": app["iconURL"],
                 "category": classify_app(app),
             })
