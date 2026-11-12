@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "Feather/Views/Apps/**"
+      - "Feather/Backend/AppsCatalog/**"
+      - "Feather/Backend/Observable/DownloadManager.swift"
       - "Feather/Resources/AppsCatalogSeed.json.gz"
       - "AltSourceKit/**"
       - "Feather.xcodeproj/**"
