@@ -14,6 +14,7 @@ on:
 permissions:
   contents: write
 
+# The catalog snapshot is generated only after all feeds have been validated.
 concurrency:
   group: refresh-apps-catalog
   cancel-in-progress: false
