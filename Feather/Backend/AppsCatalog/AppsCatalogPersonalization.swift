@@ -97,7 +97,7 @@ final class AppsCatalogPersonalization: ObservableObject {
             updateNotificationsEnabled = false
             defaults.set(false, forKey: notificationsKey)
             UNUserNotificationCenter.current().removePendingNotificationRequests(
-                withIdentifiers: ["Feather.AppsCatalog.Update"]
+                withIdentifiers: favoriteIDs.map { "Feather.AppsCatalog.Update.\($0)" }
             )
             return
         }
@@ -125,17 +125,18 @@ final class AppsCatalogPersonalization: ObservableObject {
         }
         defaults.set(known, forKey: versionsKey)
 
-        guard let latest = changed.first else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "تحديث جديد متاح"
-        content.body = "\(latest.1) أصبح متاحاً بالإصدار \(latest.2)"
-        content.sound = .default
-        let request = UNNotificationRequest(
-            identifier: "Feather.AppsCatalog.Update",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
+        for update in changed {
+            let content = UNMutableNotificationContent()
+            content.title = "تحديث جديد متاح"
+            content.body = "\(update.1) أصبح متاحاً بالإصدار \(update.2)"
+            content.sound = .default
+            let request = UNNotificationRequest(
+                identifier: "Feather.AppsCatalog.Update.\(update.0)",
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request)
+        }
     }
 
     private func persistHistory() {
