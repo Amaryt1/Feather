@@ -3,7 +3,6 @@ import AltSourceKit
 import NimbleViews
 import NimbleJSON
 import NukeUI
-import SWCompression
 
 private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
     case all, games, emulators, media, design, social, productivity
@@ -253,7 +252,6 @@ private enum AppsCatalogBundledSeed {
 }
 struct AppsCatalogView: View {
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
-    @State private var selectedCategory: AppsCatalogCategory = .all
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
     @State private var isLoading = true
@@ -265,14 +263,9 @@ struct AppsCatalogView: View {
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isHistoryPresented = false
     @State private var isDownloadsPresented = false
-    @State private var isSourcesStatusPresented = false
 
     // These feed URLs are intentionally private to the app and are never displayed as source entries.
-    private let feedURLs: [URL] = [
-        URL(string: "https://fastsign.dev/repo.json")!,
-        URL(string: "https://repository.apptesters.org")!,
-        URL(string: "https://ipa.cypwn.xyz/cypwn.json")!
-    ]
+    private let feedURLs: [URL] = []
 
     // Build the catalog index once when repositories change. Rebuilding this
     // 27k-app index from body-computed properties made every category redraw
@@ -307,13 +300,8 @@ struct AppsCatalogView: View {
         })
     }
 
-    private var visibleCategories: [AppsCatalogCategory] {
-        AppsCatalogCategory.allCases.filter { $0 == .all || categoryCount($0) > 0 }
-    }
-
     private var filteredEntries: [AppsCatalogEntry] {
-        let selectedEntries = selectedCategory == .all ? entries : entriesByCategory[selectedCategory, default: []]
-        var result = selectedEntries
+        var result = entries
 
         if favoritesOnly {
             result = result.filter { personalization.isFavorite($0.id) }
@@ -351,7 +339,6 @@ struct AppsCatalogView: View {
     var body: some View {
         NBNavigationView("التطبيقات") {
             VStack(spacing: 0) {
-                categoryPicker
                 catalogControls
 
                 if hadFailures && !repositories.isEmpty {
@@ -396,11 +383,6 @@ struct AppsCatalogView: View {
             .refreshable { await loadRepositories(forceRefresh: true) }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { isSourcesStatusPresented = true } label: {
-                        Image(systemName: "network")
-                    }
-                    .accessibilityLabel("حالة المصادر")
-
                     Button { isDownloadsPresented = true } label: {
                         Image(systemName: "arrow.down.circle")
                     }
@@ -433,11 +415,6 @@ struct AppsCatalogView: View {
             }
             .sheet(isPresented: $isDownloadsPresented) {
                 AppsCatalogDownloadsView()
-            }
-            .sheet(isPresented: $isSourcesStatusPresented) {
-                AppsCatalogSourcesStatusView(onRefresh: { url in
-                    await loadRepositories(forceRefresh: true, sourceURL: url)
-                })
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
@@ -512,33 +489,6 @@ struct AppsCatalogView: View {
         .padding(.bottom, 8)
     }
 
-    private var categoryPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(visibleCategories) { category in
-                    let selected = selectedCategory == category
-                    Button {
-                        selectedCategory = category
-                    } label: {
-                        Label("\(category.title) · \(categoryCount(category))", systemImage: category.icon)
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 9)
-                            .background(Capsule().fill(selected ? Color.accentColor : Color(.secondarySystemBackground)))
-                            .foregroundStyle(selected ? Color.white : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
-        }
-    }
-
-    private func categoryCount(_ category: AppsCatalogCategory) -> Int {
-        category == .all ? entries.count : categoryCounts[category, default: 0]
-    }
-
     @ViewBuilder
     private func appRow(_ entry: AppsCatalogEntry) -> some View {
         HStack(spacing: 12) {
@@ -568,9 +518,6 @@ struct AppsCatalogView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
-                        Text(entry.category.title)
-                            .font(.caption)
-                            .foregroundStyle(Color.accentColor)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
