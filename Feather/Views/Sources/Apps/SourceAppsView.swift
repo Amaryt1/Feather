@@ -155,7 +155,7 @@ struct SourceAppsView: View {
 		}
 	}
 	
-	struct SourceRepositoryContext: Equatable {
+	struct SourceRepositoryContext: Equatable, Sendable {
 		let sourceURL: URL?
 		let repository: ASRepository
 		
