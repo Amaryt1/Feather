@@ -96,11 +96,11 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable {
 }
 
 private struct AppsCatalogEntry: Identifiable {
-    let sourceURL: URL
+    let sourceURL: URL?
     let source: ASRepository
     let app: ASRepository.App
 
-    var id: String { "\(sourceURL.absoluteString)|\(app.currentUniqueId)" }
+    var id: String { "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)" }
     var category: AppsCatalogCategory { AppsCatalogCategory.classify(app) }
 }
 
