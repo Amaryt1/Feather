@@ -1,0 +1,90 @@
+name: Validate Feather catalog and build
+
+on:
+  pull_request:
+    paths:
+      - "Feather/Views/Apps/**"
+      - "Feather/Resources/AppsCatalogSeed.json.gz"
+      - "AltSourceKit/Sources/AltSourceKit/Models/ASRepository.swift"
+      - "scripts/**"
+      - ".github/workflows/**"
+  push:
+    branches:
+      - "fix/**"
+    paths:
+      - "Feather/Views/Apps/**"
+      - "Feather/Resources/AppsCatalogSeed.json.gz"
+      - "AltSourceKit/Sources/AltSourceKit/Models/ASRepository.swift"
+      - "scripts/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-feather-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate Python catalog generator
+        run: python -m py_compile scripts/build_apps_catalog.py
+
+      - name: Reject unresolved merge-conflict markers
+        shell: bash
+        run: |
+          if grep -R -n -E '^(<<<<<<< |=======|>>>>>>> )' --include='*.swift' Feather AltSourceKit; then
+            echo "Unresolved merge-conflict markers found."
+            exit 1
+          fi
+
+      - name: Validate bundled catalog archive and JSON
+        run: |
+          python - <<'PY'
+          import gzip
+          import json
+          from pathlib import Path
+
+          path = Path("Feather/Resources/AppsCatalogSeed.json.gz")
+          if not path.is_file():
+              raise SystemExit(f"Missing bundled catalog: {path}")
+          payload = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
+          sources = payload.get("sources")
+          if not isinstance(sources, list) or not sources:
+              raise SystemExit("Bundled catalog has no source repositories")
+          total = 0
+          for source in sources:
+              repository = source.get("repository", {})
+              apps = repository.get("apps", [])
+              if not isinstance(apps, list):
+                  raise SystemExit("A bundled source has an invalid apps array")
+              total += len(apps)
+          if total == 0:
+              raise SystemExit("Bundled catalog contains no applications")
+          print(f"Validated {len(sources)} bundled sources and {total} app records.")
+          PY
+
+      - name: Build Feather for iOS
+        run: |
+          xcodebuild \
+            -project Feather.xcodeproj \
+            -scheme Feather \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/FeatherDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
