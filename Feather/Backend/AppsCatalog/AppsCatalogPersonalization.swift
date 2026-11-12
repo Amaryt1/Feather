@@ -209,3 +209,80 @@ struct AppsCatalogHistoryView: View {
         }
     }
 }
+
+
+struct AppsCatalogDownloadsView: View {
+    @ObservedObject private var manager = DownloadManager.shared
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if manager.downloads.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.secondary)
+                        Text("لا توجد تنزيلات نشطة").font(.headline)
+                        Text("ستظهر هنا التنزيلات الجارية والمتوقفة.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+                } else {
+                    List {
+                        ForEach(manager.downloads) { download in
+                            AppsCatalogDownloadRow(download: download)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("مدير التحميلات")
+        }
+    }
+}
+
+private struct AppsCatalogDownloadRow: View {
+    @ObservedObject var download: Download
+    @ObservedObject private var manager = DownloadManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(download.fileName)
+                .font(.headline)
+                .lineLimit(1)
+            ProgressView(value: download.overallProgress)
+            HStack {
+                Text(download.isPaused ? "متوقف مؤقتاً" : "\(Int(download.overallProgress * 100))٪")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if download.totalBytes > 0 {
+                    Text("\(download.bytesDownloaded.formattedByteCount) / \(download.totalBytes.formattedByteCount)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            HStack {
+                Button {
+                    if download.isPaused {
+                        manager.resumeDownload(download)
+                    } else {
+                        manager.pauseDownload(download)
+                    }
+                } label: {
+                    Label(download.isPaused ? "استئناف" : "إيقاف مؤقت",
+                          systemImage: download.isPaused ? "play.fill" : "pause.fill")
+                }
+                .buttonStyle(.bordered)
+
+                Button(role: .destructive) {
+                    manager.cancelDownload(download)
+                } label: {
+                    Label("إلغاء", systemImage: "xmark")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 5)
+    }
+}
