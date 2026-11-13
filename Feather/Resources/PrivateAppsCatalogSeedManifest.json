@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-13T19:34:23.149193+00:00",
+  "generatedAt": "2026-11-13T23:53:32.170833+00:00",
   "catalogURL": "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/catalog.json.gz",
-  "sha256": "47ee43709f63bbe86bf412a69571a9dcfbdf3b5a2826c5b9828bc9edacbe5f92",
-  "compressedBytes": 1893792,
-  "uncompressedBytes": 13147750,
+  "sha256": "ff7553b2bc7d3f3973188cac9aa5dde9dfabcdfe387d72ab1e976b0f20abecb7",
+  "compressedBytes": 1894576,
+  "uncompressedBytes": 13148699,
   "sourceCount": 4,
-  "appCount": 15724,
+  "appCount": 15723,
   "sources": [
     {
       "name": "IPAOMTK",
@@ -21,7 +21,7 @@
     {
       "name": "AltMaker",
       "sourceURL": "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json",
-      "appCount": 446
+      "appCount": 445
     },
     {
       "name": "Ittza7aa",
