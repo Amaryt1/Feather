@@ -13,7 +13,28 @@ import NimbleViews
 struct DownloadButtonView: View {
 	let sourceURL: URL?
 	let source: ASRepository?
-	let app: ASRepository.App
+	let app: ASRepository.App?
+    private let fallbackDownloadURL: URL?
+    private let fallbackDownloadID: String?
+
+    init(sourceURL: URL?, source: ASRepository?, app: ASRepository.App) {
+        self.sourceURL = sourceURL
+        self.source = source
+        self.app = app
+        self.fallbackDownloadURL = nil
+        self.fallbackDownloadID = nil
+    }
+
+    init(downloadURL: URL, downloadID: String) {
+        self.sourceURL = nil
+        self.source = nil
+        self.app = nil
+        self.fallbackDownloadURL = downloadURL
+        self.fallbackDownloadID = downloadID
+    }
+
+    private var effectiveDownloadURL: URL? { app?.currentDownloadUrl ?? fallbackDownloadURL }
+    private var effectiveDownloadID: String { app?.currentUniqueId ?? fallbackDownloadID ?? UUID().uuidString }
 	@ObservedObject private var downloadManager = DownloadManager.shared
 
 	@State private var downloadProgress: Double = 0
@@ -21,7 +42,7 @@ struct DownloadButtonView: View {
 
 	var body: some View {
 		ZStack {
-			if let currentDownload = downloadManager.getDownload(by: app.currentUniqueId) {
+			if let currentDownload = downloadManager.getDownload(by: effectiveDownloadID) {
 				ZStack {
 					Circle()
 						.trim(from: 0, to: downloadProgress)
@@ -42,10 +63,10 @@ struct DownloadButtonView: View {
 				.compatTransition()
 			} else {
 				Button {
-					if let url = app.currentDownloadUrl {
+					if let url = effectiveDownloadURL {
 						_ = downloadManager.startDownload(
 							from: url,
-							id: app.currentUniqueId,
+							id: effectiveDownloadID,
 							sourceProvenance: _sourceProvenance()
 						)
 					}
@@ -89,7 +110,7 @@ struct DownloadButtonView: View {
 	}
 	
 	private func _sourceProvenance() -> SourceAppProvenance? {
-		guard let source else { return nil }
+		guard let source, let app else { return nil }
 		return SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
 	}
 }
