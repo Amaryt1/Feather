@@ -553,6 +553,18 @@ private struct AppsCatalogIndex: Codable, Sendable {
         case repositories, entryReferences
     }
 
+    init(
+        repositories: [SourceAppsView.SourceRepositoryContext],
+        entries: [AppsCatalogEntry],
+        entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]],
+        categoryCounts: [AppsCatalogCategory: Int]
+    ) {
+        self.repositories = repositories
+        self.entries = entries
+        self.entriesByCategory = entriesByCategory
+        self.categoryCounts = categoryCounts
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         repositories = try container.decode([SourceAppsView.SourceRepositoryContext].self, forKey: .repositories)
