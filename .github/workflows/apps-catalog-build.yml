@@ -31,6 +31,40 @@ permissions:
   contents: read
 
 jobs:
+  validate-python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Compile catalog builder
+        run: python -m py_compile scripts/build_private_apps_catalog.py
+
+      - name: Verify the four configured feeds and external catalog location
+        run: |
+          python - <<'PY'
+          import importlib.util
+
+          spec = importlib.util.spec_from_file_location(
+              "private_catalog_builder",
+              "scripts/build_private_apps_catalog.py",
+          )
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          assert len(module.FEEDS) == 4, module.FEEDS
+          assert len({url for _, url in module.FEEDS}) == 4
+          assert all(url.startswith("https://") for _, url in module.FEEDS)
+          assert module.CATALOG_OUTPUT.as_posix().startswith("catalogs/private-apps/")
+          assert not module.CATALOG_OUTPUT.as_posix().startswith("Feather/Resources/")
+          print("Four unique feeds and external catalog output verified.")
+          PY
+
   build:
     runs-on: macos-26
     strategy:
