@@ -14,7 +14,7 @@ import SwiftUI
 
 // MARK: - Repository
 
-public struct ASRepository: Sendable, Codable, Hashable, Identifiable {
+public struct ASRepository: Sendable, Decodable, Hashable, Identifiable {
 	// Core data
 	public var id: String?
 	public var name: String?
@@ -140,7 +140,7 @@ public struct ASRepository: Sendable, Codable, Hashable, Identifiable {
 // MARK: - App
 
 extension ASRepository {
-	public struct App: Sendable, Codable, Hashable, Identifiable {
+	public struct App: Sendable, Decodable, Hashable, Identifiable {
 		public var uuid = UUID()
 		
 		public var id: String?
@@ -185,7 +185,7 @@ extension ASRepository {
 		
 		public var marketplaceID: String?
 
-		public struct Screenshots: Codable, Hashable, Sendable {
+		public struct Screenshots: Decodable, Hashable, Sendable {
 			public var iPhone: [URL]?
 			public var iPad: [URL]?
 
@@ -211,7 +211,6 @@ extension ASRepository {
 
 		public init(from decoder: any Decoder) throws {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
-			self.uuid = try container.decodeIfPresent(UUID.self, forKey: .cacheUUID) ?? UUID()
 			self.id = try container.decodeIfPresent(String.self, forKey: .id)
 			self.name = try container.decodeIfPresent(String.self, forKey: .name)
 
@@ -345,7 +344,6 @@ extension ASRepository {
 		//		}
 
 		public enum CodingKeys: String, CodingKey {
-			case uuid
 			case id = "bundleIdentifier"
 			case name, subtitle, description
 			case developer = "developerName"
@@ -393,7 +391,7 @@ extension ASRepository {
 			"\(id ?? uuid.uuidString).\(downloadURL?.absoluteString ?? uuid.uuidString)"
 		}
 
-		public struct Version: Codable, Hashable, Identifiable, Comparable, Sendable {
+		public struct Version: Decodable, Hashable, Identifiable, Comparable, Sendable {
 			public var id: String { version + (build ?? "") }
 			public var version: String
 			public var build: String?
@@ -450,7 +448,7 @@ extension ASRepository {
 // MARK: - News
 
 extension ASRepository {
-	public struct News: Sendable, Codable, Hashable, Identifiable {
+	public struct News: Sendable, Decodable, Hashable, Identifiable {
 		public var id: String
 		public var title: String
 		public var caption: String
@@ -486,18 +484,18 @@ extension ASRepository {
 }
 
 extension ASRepository {
-	public struct Permission: Codable, Hashable, Sendable {
+	public struct Permission: Decodable, Hashable, Sendable {
 		public var type: String
 		public var usageDescription: String
 	}
 }
 
 extension ASRepository {
-	public struct AppPermissions: Codable, Hashable, Sendable {
+	public struct AppPermissions: Decodable, Hashable, Sendable {
 		public var entitlements: [Entitlement]?
 		public var privacy: [Privacy]?
 
-		public struct Entitlement: Codable, Hashable, Sendable {
+		public struct Entitlement: Decodable, Hashable, Sendable {
 			public var name: String
 
 			public init(from decoder: any Decoder) throws {
@@ -506,12 +504,12 @@ extension ASRepository {
 			}
 		}
 
-		public struct Privacy: Codable, Hashable, Sendable {
+		public struct Privacy: Decodable, Hashable, Sendable {
 			public var name: String
 			public var usageDescription: String
 		}
 
-		public struct PrivacyDictionary: Codable, Hashable, Sendable {
+		public struct PrivacyDictionary: Decodable, Hashable, Sendable {
 			private var _permissions: [String: String]
 			
 			public var privacyArray: [Privacy] {
@@ -554,7 +552,7 @@ extension ASRepository {
 }
 
 extension ASRepository {
-	public struct UserInfo: Codable, Hashable, Sendable {
+	public struct UserInfo: Decodable, Hashable, Sendable {
 		public var patreonAccessToken: String?
 	}
 }
@@ -678,7 +676,7 @@ public struct DateParsed: Codable, Equatable, Hashable, Comparable, Sendable {
 }
 
 
-public struct OSVersion: Codable, Hashable, CustomStringConvertible, Sendable {
+public struct OSVersion: Decodable, Hashable, CustomStringConvertible, Sendable {
 	public var description: String {
 		return "\(majorVersion).\(minorVersion).\(patchVersion)"
 	}
@@ -697,69 +695,4 @@ public struct OSVersion: Codable, Hashable, CustomStringConvertible, Sendable {
 		self.minorVersion = components[safe: 1] ?? 0
 		self.patchVersion = components[safe: 2] ?? 0
 	}
-}
-
-
-// MARK: - Persistent catalog cache encoding
-// Color is a presentation-only SwiftUI value and is intentionally omitted from
-// the disk cache. All source/app metadata required for browsing and downloads
-// remains encoded and is decoded by the existing defensive initializers.
-extension ASRepository {
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encodeIfPresent(id, forKey: .id)
-        try c.encodeIfPresent(name, forKey: .name)
-        try c.encodeIfPresent(subtitle, forKey: .subtitle)
-        try c.encodeIfPresent(description, forKey: .description)
-        try c.encodeIfPresent(website, forKey: .website)
-        try c.encodeIfPresent(iconURL, forKey: .iconURL)
-        try c.encodeIfPresent(headerURL, forKey: .headerURL)
-        try c.encodeIfPresent(patreonURL, forKey: .patreonURL)
-        try c.encodeIfPresent(userInfo, forKey: .userInfo)
-        try c.encode(apps, forKey: .apps)
-        try c.encodeIfPresent(featuredApps, forKey: .featuredApps)
-        try c.encodeIfPresent(news, forKey: .news)
-    }
-}
-
-extension ASRepository.App {
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(uuid, forKey: .cacheUUID)
-        try c.encodeIfPresent(id, forKey: .id)
-        try c.encodeIfPresent(name, forKey: .name)
-        try c.encodeIfPresent(subtitle, forKey: .subtitle)
-        try c.encodeIfPresent(description, forKey: .description)
-        try c.encodeIfPresent(developer, forKey: .developer)
-        try c.encodeIfPresent(versions, forKey: .versions)
-        try c.encodeIfPresent(version, forKey: .version)
-        try c.encodeIfPresent(versionDate, forKey: .versionDate)
-        try c.encodeIfPresent(date, forKey: .date)
-        try c.encodeIfPresent(versionDescription, forKey: .versionDescription)
-        try c.encodeIfPresent(downloadURL, forKey: .downloadURL)
-        try c.encodeIfPresent(localizedDescription, forKey: .localizedDescription)
-        try c.encodeIfPresent(iconURL, forKey: .iconURL)
-        try c.encodeIfPresent(size, forKey: .size)
-        try c.encodeIfPresent(category, forKey: .category)
-        try c.encodeIfPresent(beta, forKey: .beta)
-        try c.encodeIfPresent(permissions, forKey: .permissions)
-        try c.encodeIfPresent(appPermissions, forKey: .appPermissions)
-        try c.encodeIfPresent(screenshots, forKey: .screenshots)
-        try c.encodeIfPresent(screenshotURLs, forKey: .screenshotURLs)
-        try c.encodeIfPresent(marketplaceID, forKey: .marketplaceID)
-    }
-}
-
-extension ASRepository.News {
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
-        try c.encode(title, forKey: .title)
-        try c.encode(caption, forKey: .caption)
-        try c.encodeIfPresent(imageURL, forKey: .imageURL)
-        try c.encodeIfPresent(url, forKey: .url)
-        try c.encodeIfPresent(appID, forKey: .appID)
-        try c.encodeIfPresent(date, forKey: .date)
-        try c.encode(notify, forKey: .notify)
-    }
 }
