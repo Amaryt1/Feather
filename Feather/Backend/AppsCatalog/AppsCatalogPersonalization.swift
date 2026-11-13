@@ -24,48 +24,29 @@ struct AppsCatalogDownloadRecord: Codable, Identifiable {
 final class AppsCatalogPersonalization: ObservableObject {
     static let shared = AppsCatalogPersonalization()
 
-    @Published private(set) var favoriteIDs: Set<String>
-    @Published private(set) var recentIDs: [String]
     @Published private(set) var downloadHistory: [AppsCatalogDownloadRecord]
-    @Published private(set) var updateNotificationsEnabled: Bool
 
     private let defaults = UserDefaults.standard
-    private let favoritesKey = "Feather.AppsCatalog.Favorites.v1"
-    private let recentKey = "Feather.AppsCatalog.Recent.v1"
     private let historyKey = "Feather.AppsCatalog.DownloadHistory.v1"
-    private let notificationsKey = "Feather.AppsCatalog.UpdateNotifications.v1"
-    private let versionsKey = "Feather.AppsCatalog.KnownVersions.v1"
 
     private init() {
-        favoriteIDs = Set(defaults.stringArray(forKey: "Feather.AppsCatalog.Favorites.v1") ?? [])
-        recentIDs = defaults.stringArray(forKey: "Feather.AppsCatalog.Recent.v1") ?? []
-        if let data = defaults.data(forKey: "Feather.AppsCatalog.DownloadHistory.v1"),
+        let legacyFavoriteIDs = defaults.stringArray(forKey: "Feather.AppsCatalog.Favorites.v1") ?? []
+        let legacyNotificationIDs = legacyFavoriteIDs.map { "Feather.AppsCatalog.Update.\($0)" }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: legacyNotificationIDs)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: legacyNotificationIDs)
+
+        // Remove persisted data for features intentionally removed from the catalog.
+        defaults.removeObject(forKey: "Feather.AppsCatalog.Favorites.v1")
+        defaults.removeObject(forKey: "Feather.AppsCatalog.Recent.v1")
+        defaults.removeObject(forKey: "Feather.AppsCatalog.UpdateNotifications.v1")
+        defaults.removeObject(forKey: "Feather.AppsCatalog.KnownVersions.v1")
+
+        if let data = defaults.data(forKey: historyKey),
            let records = try? JSONDecoder().decode([AppsCatalogDownloadRecord].self, from: data) {
             downloadHistory = records
         } else {
             downloadHistory = []
         }
-        updateNotificationsEnabled = defaults.bool(forKey: "Feather.AppsCatalog.UpdateNotifications.v1")
-    }
-
-    func isFavorite(_ id: String) -> Bool {
-        favoriteIDs.contains(id)
-    }
-
-    func toggleFavorite(_ id: String) {
-        if favoriteIDs.contains(id) {
-            favoriteIDs.remove(id)
-        } else {
-            favoriteIDs.insert(id)
-        }
-        defaults.set(Array(favoriteIDs), forKey: favoritesKey)
-    }
-
-    func recordViewed(_ id: String) {
-        recentIDs.removeAll { $0 == id }
-        recentIDs.insert(id, at: 0)
-        if recentIDs.count > 100 { recentIDs = Array(recentIDs.prefix(100)) }
-        defaults.set(recentIDs, forKey: recentKey)
     }
 
     func recordDownload(id: String, fileName: String, sourceURL: URL, localURL: URL) {
@@ -92,63 +73,10 @@ final class AppsCatalogPersonalization: ObservableObject {
         persistHistory()
     }
 
-    func setUpdateNotificationsEnabled(_ enabled: Bool) {
-        guard enabled else {
-            updateNotificationsEnabled = false
-            defaults.set(false, forKey: notificationsKey)
-            UNUserNotificationCenter.current().removePendingNotificationRequests(
-                withIdentifiers: favoriteIDs.map { "Feather.AppsCatalog.Update.\($0)" }
-            )
-            return
-        }
-
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.updateNotificationsEnabled = granted
-                self.defaults.set(granted, forKey: self.notificationsKey)
-            }
-        }
-    }
-
-    func checkForUpdates(in entries: [AppsCatalogEntrySnapshot]) {
-        guard updateNotificationsEnabled else { return }
-        var known = defaults.dictionary(forKey: versionsKey) as? [String: String] ?? [:]
-        var changed: [(String, String, String)] = []
-
-        for entry in entries where favoriteIDs.contains(entry.id) {
-            guard let version = entry.version, !version.isEmpty else { continue }
-            if let previous = known[entry.id], previous != version {
-                changed.append((entry.id, entry.name, version))
-            }
-            known[entry.id] = version
-        }
-        defaults.set(known, forKey: versionsKey)
-
-        for update in changed {
-            let content = UNMutableNotificationContent()
-            content.title = "تحديث جديد متاح"
-            content.body = "\(update.1) أصبح متاحاً بالإصدار \(update.2)"
-            content.sound = .default
-            let request = UNNotificationRequest(
-                identifier: "Feather.AppsCatalog.Update.\(update.0)",
-                content: content,
-                trigger: nil
-            )
-            UNUserNotificationCenter.current().add(request)
-        }
-    }
-
     private func persistHistory() {
         guard let data = try? JSONEncoder().encode(downloadHistory) else { return }
         defaults.set(data, forKey: historyKey)
     }
-}
-
-struct AppsCatalogEntrySnapshot {
-    let id: String
-    let name: String
-    let version: String?
 }
 
 struct AppsCatalogHistoryView: View {

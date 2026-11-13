@@ -72,80 +72,444 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    private static func normalized(_ value: String) -> String {
+        let folded = value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+            .replacingOccurrences(of: "أ", with: "ا")
+            .replacingOccurrences(of: "إ", with: "ا")
+            .replacingOccurrences(of: "آ", with: "ا")
+            .replacingOccurrences(of: "ى", with: "ي")
+            .replacingOccurrences(of: "ة", with: "ه")
+            // In Arabic text the conjunction "و" is attached to the next word.
+            // Separate it when preceded by a space so category labels still match.
+            .replacingOccurrences(of: " و", with: " ")
+        let words = folded
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        return " " + words.joined(separator: " ") + " "
+    }
+
+    private static func containsAny(_ phrases: [String], in text: String) -> Bool {
+        phrases.contains { text.contains(normalized($0)) }
+    }
+
     static func classify(_ app: ASRepository.App) -> AppsCatalogCategory {
-        let raw = (app.category ?? "")
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = normalized(app.name ?? "")
+        let subtitle = normalized(app.subtitle ?? "")
+        let category = normalized(app.category ?? "")
+        let details = normalized([
+            app.description,
+            app.localizedDescription
+        ].compactMap { $0 }.joined(separator: " "))
 
-        let text = [app.category, app.name, app.subtitle, app.description,
-                    app.localizedDescription, app.developer, app.id]
-            .compactMap { $0 }
-            .joined(separator: " ")
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
-
-        func has(_ terms: [String]) -> Bool { terms.contains { text.contains($0) } }
-
-        // Prefer explicit, specific categories supplied by the repository.
-        switch raw {
-        case "games", "game", "gaming": return .games
-        case "emulator", "emulators": return .emulators
-        case "graphics", "photo-video", "design", "graphic design": return .design
-        case "photography", "photo": return .photography
-        case "entertainment", "music", "video", "media": return .media
-        case "social", "social networking": return .social
-        case "productivity", "business": return .productivity
-        case "developer", "development": return .developer
-        case "signing", "sideloading": return .signing
-        case "jailbreak", "tweaks": return .jailbreak
-        case "customization", "themes", "personalization": return .customization
-        case "ai", "artificial intelligence", "machine learning": return .ai
-        case "education": return .education
-        case "finance": return .finance
-        case "shopping": return .shopping
-        case "travel": return .travel
-        case "health", "fitness", "medical": return .health
-        case "navigation": return .navigation
-        case "news": return .news
-        case "lifestyle": return .lifestyle
-        case "sports": return .sports
-        case "food", "food & drink": return .food
-        default: break
+        func named(_ phrases: [String]) -> Bool {
+            containsAny(phrases, in: name)
+        }
+        func titled(_ phrases: [String]) -> Bool {
+            containsAny(phrases, in: name) || containsAny(phrases, in: subtitle)
+        }
+        func categorized(_ phrases: [String]) -> Bool {
+            containsAny(phrases, in: category)
+        }
+        func described(_ phrases: [String]) -> Bool {
+            containsAny(phrases, in: details)
         }
 
-        // Use the app's descriptive metadata when the source has no specific category.
-        if has(["emulator", "emulation", "retroarch", "ppsspp", "delta emulator", "محاكي", "محاكاة"]) { return .emulators }
-        if has(["video game", "mobile game", "gameplay", "gaming", "arcade", "rpg", "minecraft", "terraria", "fortnite", "pubg", "roblox", "clash of clans", "clash royale", "subway surfers", "gta:", "grand theft auto", "bully", "8 ball pool", "agar.io", "car parking", "brawl stars", "call of duty", "free fire", "among us", "stardew valley", "pokemon", "لعبة", "ألعاب", "العاب"]) { return .games }
-        if has(["artificial intelligence", "ai assistant", "chatgpt", "openai", "claude", "gemini", "copilot", "stable diffusion", "machine learning", "ذكاء اصطناعي"]) { return .ai }
-        if has(["jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine", "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza", "tweak", "جيلبريك", "تويك"]) { return .jailbreak }
-        if has(["signing", "signer", "ksign", "esign", "scarlet", "sideload", "ipa installer", "certificate manager", "توقيع", "تثبيت ipa", "شهادات"]) { return .signing }
-        if has(["ide", "code editor", "developer tool", "terminal", "git client", "ssh client", "debugger", "programming", "xcode", "برمجة", "مطور"]) { return .developer }
-        if has(["photo editor", "photo editing", "graphic design", "drawing", "illustration", "canva", "procreate", "vector editor", "video editor", "تصميم", "تعديل الصور", "رسم"]) { return .design }
-        if has(["camera", "photography", "raw photo", "photo filter", "تصوير", "كاميرا"]) { return .photography }
-        if has(["movie", "movies", "tv series", "streaming", "iptv", "anime", "video player", "music player", "podcast", "cinema", "film", "أفلام", "مسلسلات", "انمي", "أنمي", "مشاهدة", "بث"]) { return .media }
-        if has(["language learning", "dictionary", "flashcards", "education", "school", "university", "تعليم", "قاموس", "تعلم", "دراسة"]) { return .education }
-        if has(["task manager", "todo", "notes", "calendar", "office suite", "document editor", "إنتاجية", "مهام", "ملاحظات"]) { return .productivity }
-        if has(["social network", "messenger", "chat app", "telegram", "discord", "reddit", "social media", "instagram", "facebook", "tiktok", "whatsapp", "snapchat", "twitter", "تواصل اجتماعي", "مراسلة"]) { return .social }
-        if has(["youtube", "netflix", "spotify", "twitch", "vlc", "soundcloud", "music streaming", "video streaming"]) { return .media }
-        if has(["capcut", "picsart", "canva", "alight motion", "video star", "kinemaster", "lightroom", "photoshop", "procreate", "rem editing"]) { return .design }
-        if has(["notion", "todoist", "ticktick", "goodnotes", "notability", "noteshelf", "microsoft office", "google drive", "dropbox", "pdf editor"]) { return .productivity }
-        if has(["theme", "icon pack", "customization", "widgets", "wallpaper", "lock screen", "تخصيص", "ثيمات", "خلفيات"]) { return .customization }
-        if has(["banking", "bank account", "investment", "stock market", "crypto wallet", "payment", "wallet", "bank", "مصرف", "محفظة", "دفع"]) { return .finance }
-        if has(["shopping", "marketplace", "online store", "e-commerce", "retail", "تسوق", "متجر", "شراء"]) { return .shopping }
-        if has(["flight", "hotel booking", "travel guide", "airline", "trip planner", "حجز فندق", "سفر", "رحلات"]) { return .travel }
-        if has(["fitness", "workout", "health", "medical", "doctor", "meditation", "sleep tracker", "لياقة", "صحة", "طبي"]) { return .health }
-        if has(["navigation", "maps", "gps", "directions", "خرائط", "ملاحة"]) { return .navigation }
-        if has(["news", "newspaper", "magazine", "breaking news", "أخبار", "مجلة"]) { return .news }
-        if has(["recipe", "cooking", "food delivery", "restaurant", "وصفات", "طبخ", "طعام", "مطعم"]) { return .food }
-        if has(["football", "soccer", "basketball", "tennis", "sports", "workout training", "كرة القدم", "رياضة"]) { return .sports }
-        if has(["lifestyle", "home design", "parenting", "pets", "نمط الحياة", "منزل"]) { return .lifestyle }
-        if has(["utility", "utilities", "file manager", "scanner", "calculator", "speed test", "weather", "أدوات", "حاسبة", "طقس"]) { return .utilities }
-
-        switch raw {
-        case "utilities", "utility": return .utilities
-        default: return .other
+        // Resolve clear app identities first. This prevents sports-themed games,
+        // fitness games, or news about games from being placed in non-game sections.
+        if named([
+            "emulator", "emulators", "retroarch", "ppsspp", "delta emulator",
+            "provenance", "dolphin emulator", "folium", "mame", "game boy emulator"
+        ]) {
+            return .emulators
         }
+
+        if named([
+            "gta", "grand theft auto", "bully", "minecraft", "roblox", "fortnite",
+            "pubg", "playerunknown", "call of duty", "free fire", "among us",
+            "8 ball pool", "8ball pool", "agar io", "car parking", "clash of clans",
+            "clash royale", "clash royal", "subway surfers", "sabway surfers", "brawl stars", "stardew valley",
+            "pokemon", "genshin impact", "honkai", "mobile legends",
+            "league of legends", "wild rift", "asphalt", "need for speed",
+            "efootball", "fifa mobile", "fifa 23", "fifa 24", "fifa 25", "fifa 26",
+            "fc mobile", "fc 24", "fc 25", "fc 26", "ea sports fc", "dream league soccer",
+            "football manager", "nba 2k", "madden nfl", "mlb the show", "f1 mobile racing",
+            "real racing", "monopoly", "angry birds", "fruit ninja", "temple run",
+            "hill climb", "shadow fight", "geometry dash", "plants vs zombies",
+            "mortal kombat", "tekken", "street fighter", "terraria", "dead cells",
+            "the sims", "simcity", "hay day", "stumble guys", "fall guys",
+            "ludo", "chess", "candy crush", "homescapes", "royal match",
+            "arena of valor", "brawlhalla", "لعبة", "العاب"
+        ]) || named(["game", "games", "gaming"]) || categorized([
+            "games", "game", "gaming", "arcade", "arcade games", "puzzle games", "العاب", "لعبه",
+            "action games", "adventure games", "racing games", "strategy games"
+        ]) {
+            return .games
+        }
+
+        if named([
+            "esign", "e sign", "scarlet", "altstore", "sidestore", "trollstore",
+            "troll installer", "trollinstallerx", "feather signer", "ksign"
+        ]) {
+            return .signing
+        }
+        if named([
+            "sileo", "cydia", "dopamine", "misaka", "serotonin", "ellekit",
+            "roothide", "bootstrap", "filza", "snowboard", "jailbreak", "tweak"
+        ]) {
+            return .jailbreak
+        }
+        if named([
+            "chatgpt", "openai", "claude", "gemini", "copilot", "perplexity",
+            "midjourney", "stable diffusion", "ai assistant"
+        ]) {
+            return .ai
+        }
+
+        // Well-known apps are classified by their actual purpose, not incidental
+        // words in their marketing descriptions or developer names.
+        if named([
+            "netflix", "youtube", "spotify", "twitch", "vlc", "soundcloud", "org 24", "org 2024",
+            "iptv", "crunchyroll", "disney plus", "prime video", "apple music",
+            "apple tv", "plex", "kodi", "podcast", "video player", "movie player",
+            "djay", "moviespirit"
+        ]) {
+            return .media
+        }
+        if named([
+            "capcut", "picsart", "canva", "alight motion", "video star",
+            "kinemaster", "imovie", "lightroom", "photoshop", "procreate", "ibis paint",
+            "remini", "cute cut", "videoleap", "inshot", "affinity", "pixelmator"
+        ]) {
+            return .design
+        }
+        if named([
+            "halide", "camera plus", "procamera", "blackmagic camera",
+            "dslr camera", "spectre camera", "camera app"
+        ]) {
+            return .photography
+        }
+        if named([
+            "telegram", "discord", "reddit", "instagram", "facebook", "tiktok",
+            "whatsapp", "snapchat", "twitter", "threads", "signal", "messenger",
+            "wechat", "imo", "viber"
+        ]) {
+            return .social
+        }
+        if named([
+            "duolingo", "khan academy", "coursera", "udemy", "quizlet", "moodle",
+            "kahoot", "babbel", "busuu", "linkedin learning", "goodreads"
+        ]) {
+            return .education
+        }
+        if named([
+            "notion", "todoist", "ticktick", "goodnotes", "notability", "noteshelf",
+            "microsoft office", "google drive", "dropbox", "pdf expert",
+            "microsoft word", "microsoft excel", "microsoft powerpoint"
+        ]) {
+            return .productivity
+        }
+        if named([
+            "working copy", "textastic", "code editor", "github", "git client",
+            "xcode", "terminal", "terminus", "ssh client", "ide"
+        ]) {
+            return .developer
+        }
+        if named([
+            "paypal", "revolut", "wise", "cash app", "payoneer", "wallet",
+            "banking", "bank app", "venmo"
+        ]) {
+            return .finance
+        }
+        if named([
+            "amazon", "aliexpress", "ebay", "etsy", "temu", "shein",
+            "shopping", "shop app"
+        ]) {
+            return .shopping
+        }
+        if named([
+            "booking com", "airbnb", "expedia", "tripadvisor", "skyscanner",
+            "airline", "flight booking", "travel guide"
+        ]) {
+            return .travel
+        }
+        if named([
+            "google fit", "apple health", "samsung health", "fitbod", "strong workout",
+            "nike run club", "myfitnesspal", "fitbit", "nike training club",
+            "apple fitness", "strava", "headspace", "sleep cycle", "calm", "medisafe", "ada health"
+        ]) {
+            return .health
+        }
+        if named([
+            "google maps", "apple maps", "waze", "maps", "navigation",
+            "here wego", "sygic", "tomtom"
+        ]) {
+            return .navigation
+        }
+        if named([
+            "bbc news", "cnn", "reuters", "ap news", "al jazeera", "sky news",
+            "new york times", "the guardian", "npr", "news", "newspaper",
+            "magazine", "flipboard"
+        ]) {
+            return .news
+        }
+        if named([
+            "onefootball", "fotmob", "sofascore", "flashscore", "livescore",
+            "365scores", "espn", "bein sports", "f1 tv", "formula 1",
+            "nba", "nfl", "ufc", "cricbuzz", "wimbledon",
+            "sports", "sport", "fifa", "motogp", "premier league", "football scores", "soccer", "basketball",
+            "tennis", "cricket", "rugby"
+        ]) {
+            return .sports
+        }
+        if named([
+            "uber eats", "doordash", "deliveroo", "talabat", "food delivery",
+            "recipe", "cooking", "kitchen stories"
+        ]) {
+            return .food
+        }
+        if named([
+            "widgy", "widgetsmith", "themify", "color widgets", "wallpaper",
+            "icon pack", "lock launcher", "themes"
+        ]) {
+            return .customization
+        }
+        if named([
+            "calculator", "file manager", "scanner", "qr scanner", "speed test", "ispoofer", "ipogo",
+            "weather", "auto clicker", "password manager", "compressor"
+        ]) {
+            return .utilities
+        }
+        if named([
+            "home design", "home decor", "pet care", "parenting", "personal journal",
+            "habit tracker", "lifestyle", "daily journal"
+        ]) {
+            return .lifestyle
+        }
+
+        // Use explicit source categories next. The values are normalized first,
+        // so variants such as "Health & Fitness" and "Food & Drink" are handled.
+        if categorized(["health", "health fitness", "health and fitness", "fitness", "medical", "medicine", "الصحة", "الصحه", "الصحة واللياقة", "الصحه واللياقه", "لياقة", "لياقه"]) {
+            return .health
+        }
+        if categorized(["sports", "sport", "sports recreation", "sports and recreation", "الرياضة", "الرياضه", "رياضة", "رياضه"]) {
+            return .sports
+        }
+        if categorized(["news", "news magazines", "news and magazines", "magazines newspapers", "magazines and newspapers", "الأخبار", "الاخبار", "أخبار", "اخبار", "مجلات", "صحف"]) {
+            return .news
+        }
+        if categorized(["lifestyle", "life style", "نمط الحياة", "نمط الحياه", "اسلوب الحياة", "اسلوب الحياه"]) {
+            return .lifestyle
+        }
+        if categorized(["graphics design", "graphics and design", "graphic design", "design", "photo video", "photo and video", "التصميم", "تصميم"]) {
+            return .design
+        }
+        if categorized(["photography", "camera", "التصوير", "تصوير", "كاميرا"]) {
+            return .photography
+        }
+        if categorized(["entertainment", "music", "video", "media", "streaming"]) {
+            return .media
+        }
+        if categorized(["social", "social networking", "communication", "messaging", "التواصل الاجتماعي", "تواصل اجتماعي", "مراسلة"]) {
+            return .social
+        }
+        if categorized(["finance", "banking", "financial", "المال", "التمويل", "مصارف", "مصرف"]) {
+            return .finance
+        }
+        if categorized(["productivity", "business", "office", "الإنتاجية", "الانتاجية", "الأعمال", "الاعمال"]) {
+            return .productivity
+        }
+        if categorized(["developer", "developer tools", "development", "programming", "البرمجة", "برمجة", "مطورين"]) {
+            return .developer
+        }
+        if categorized(["signing", "sideloading", "التوقيع", "تثبيت ipa", "شهادات"]) {
+            return .signing
+        }
+        if categorized(["jailbreak", "tweaks", "جيلبريك", "تويكات", "تويك"]) {
+            return .jailbreak
+        }
+        if categorized(["customization", "themes", "personalization", "التخصيص", "ثيمات", "خلفيات"]) {
+            return .customization
+        }
+        if categorized(["ai", "artificial intelligence", "machine learning", "الذكاء الاصطناعي", "ذكاء اصطناعي"]) {
+            return .ai
+        }
+        if categorized(["education", "reference", "books", "التعليم", "تعليم", "دراسة"]) {
+            return .education
+        }
+        if categorized(["shopping", "retail", "e commerce", "التسوق", "تسوق"]) {
+            return .shopping
+        }
+        if categorized(["travel", "travel navigation", "السفر", "رحلات"]) {
+            return .travel
+        }
+        if categorized(["navigation", "maps", "الملاحة", "خرائط"]) {
+            return .navigation
+        }
+        if categorized(["food", "food drink", "food and drink", "food dining", "الطعام", "الطبخ", "وصفات", "مطاعم"]) {
+            return .food
+        }
+        if categorized(["utilities", "utility", "tools", "أدوات", "ادوات", "خدمات"]) {
+            return .utilities
+        }
+
+        // A short title or subtitle can supply a clear purpose when a feed omits
+        // its category. These are specific phrases, not loose keyword fragments.
+        if titled([
+            "health and fitness", "fitness tracker", "workout tracker", "workout app",
+            "gym training", "medical app", "mental health", "health app"
+        ]) {
+            return .health
+        }
+        if titled([
+            "live sports scores", "sports scores", "football scores", "match schedule",
+            "match results", "league table", "sports news", "soccer", "basketball",
+            "tennis", "cricket", "rugby"
+        ]) {
+            return .sports
+        }
+        if titled([
+            "breaking news", "news reader", "news app", "world news", "daily news",
+            "newspaper", "magazine", "أخبار عاجلة", "نشرة الأخبار"
+        ]) {
+            return .news
+        }
+        if titled([
+            "streaming app", "video player", "movie player", "music player",
+            "music streaming", "video streaming", "podcast player", "iptv player"
+        ]) {
+            return .media
+        }
+        if titled([
+            "photo editor", "video editor", "graphic design", "drawing app",
+            "image editor", "animation editor"
+        ]) {
+            return .design
+        }
+        if titled([
+            "camera app", "camera controls", "photography app", "raw camera"
+        ]) {
+            return .photography
+        }
+        if titled([
+            "social network", "messaging app", "chat messenger", "social media"
+        ]) {
+            return .social
+        }
+        if titled([
+            "language learning", "online courses", "learning app", "education app"
+        ]) {
+            return .education
+        }
+        if titled([
+            "task manager", "to do list", "note taking", "calendar app",
+            "office suite", "pdf editor"
+        ]) {
+            return .productivity
+        }
+        if titled([
+            "code editor", "developer tools", "programming", "terminal emulator"
+        ]) {
+            return .developer
+        }
+        if titled([
+            "banking app", "personal finance", "payment wallet", "budget tracker"
+        ]) {
+            return .finance
+        }
+        if titled([
+            "online shopping", "shopping app", "e commerce", "marketplace"
+        ]) {
+            return .shopping
+        }
+        if titled([
+            "flight booking", "hotel booking", "travel guide", "trip planner"
+        ]) {
+            return .travel
+        }
+        if titled([
+            "maps and navigation", "gps navigation", "navigation app", "map app"
+        ]) {
+            return .navigation
+        }
+        if titled([
+            "home design", "home decor", "pet care", "parenting", "lifestyle app",
+            "personal journal", "habit tracker"
+        ]) {
+            return .lifestyle
+        }
+        if titled([
+            "food delivery", "recipe app", "cooking recipes", "food and drink"
+        ]) {
+            return .food
+        }
+        if titled([
+            "file manager", "document scanner", "qr code scanner", "speed test",
+            "weather forecast", "calculator app", "password manager", "vpn"
+        ]) {
+            return .utilities
+        }
+
+        // Descriptions are only used for specific functions, never broad words
+        // such as "sports", "health", or "news" that can appear incidentally.
+        if described([
+            "workout plan", "fitness tracker", "step counter", "calorie counter",
+            "sleep tracker", "health records", "medical appointment", "gym training",
+            "تمارين رياضية", "تتبع اللياقة", "عداد الخطوات", "السعرات الحرارية",
+            "تتبع النوم", "السجل الطبي"
+        ]) {
+            return .health
+        }
+        if described([
+            "live sports scores", "football scores", "match schedule", "match results",
+            "league table", "sports news", "مباريات مباشرة", "نتائج المباريات",
+            "جدول المباريات", "اخبار الرياضة", "أخبار الرياضة"
+        ]) {
+            return .sports
+        }
+        if described([
+            "breaking news", "news reader", "world news", "daily news",
+            "أخبار عاجلة", "نشرة الأخبار", "صحيفة", "مجلة"
+        ]) {
+            return .news
+        }
+        if described([
+            "flight booking", "hotel booking", "travel guide", "trip planner",
+            "حجز الطيران", "حجز الفنادق", "دليل السفر"
+        ]) {
+            return .travel
+        }
+        if described([
+            "food delivery", "recipe book", "cooking recipes", "توصيل الطعام",
+            "وصفات الطعام", "وصفات الطبخ"
+        ]) {
+            return .food
+        }
+        if described([
+            "online shopping", "shopping cart", "marketplace", "التسوق عبر الانترنت"
+        ]) {
+            return .shopping
+        }
+        if described([
+            "mobile banking", "bank account", "payment wallet", "التحويلات البنكية"
+        ]) {
+            return .finance
+        }
+        if described([
+            "home automation", "interior design", "pet care", "parenting",
+            "منزل ذكي", "رعاية الحيوانات", "العناية بالحيوانات"
+        ]) {
+            return .lifestyle
+        }
+        if described([
+            "file manager", "document scanner", "qr code scanner", "speed test",
+            "weather forecast", "calculator app", "password manager"
+        ]) {
+            return .utilities
+        }
+
+        return .other
     }
 }
 
@@ -228,9 +592,6 @@ struct AppsCatalogView: View {
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
     @State private var isLoading = true
     @State private var hasLoaded = false
-    @StateObject private var personalization = AppsCatalogPersonalization.shared
-    @State private var favoritesOnly = false
-    @State private var recentOnly = false
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isHistoryPresented = false
     @State private var isDownloadsPresented = false
@@ -298,9 +659,6 @@ struct AppsCatalogView: View {
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
-        personalization.checkForUpdates(in: index.entries.map {
-            AppsCatalogEntrySnapshot(id: $0.id, name: $0.app.currentName, version: $0.app.currentVersion)
-        })
     }
 
     @MainActor
@@ -312,9 +670,6 @@ struct AppsCatalogView: View {
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
-        personalization.checkForUpdates(in: index.entries.map {
-            AppsCatalogEntrySnapshot(id: $0.id, name: $0.app.currentName, version: $0.app.currentVersion)
-        })
     }
 
     private var visibleCategories: [AppsCatalogCategory] {
@@ -325,14 +680,6 @@ struct AppsCatalogView: View {
         let selectedEntries = selectedCategory == .all ? entries : entriesByCategory[selectedCategory, default: []]
         var result = selectedEntries
 
-        if favoritesOnly {
-            result = result.filter { personalization.isFavorite($0.id) }
-        }
-        if recentOnly {
-            let recentOrder = Dictionary(uniqueKeysWithValues: personalization.recentIDs.enumerated().map { ($1, $0) })
-            result = result.filter { recentOrder[$0.id] != nil }
-            result.sort { (recentOrder[$0.id] ?? .max) < (recentOrder[$1.id] ?? .max) }
-        }
         if !searchText.isEmpty {
             result = result.filter { entry in
                 entry.app.currentName.localizedCaseInsensitiveContains(searchText)
@@ -340,14 +687,10 @@ struct AppsCatalogView: View {
                     || (entry.app.developer?.localizedCaseInsensitiveContains(searchText) ?? false)
             }
         }
+
         switch sortOption {
         case .recommended:
-            if let recentID = personalization.recentIDs.first,
-               let recentCategory = entries.first(where: { $0.id == recentID })?.category {
-                result.sort {
-                    ($0.category == recentCategory ? 0 : 1) < ($1.category == recentCategory ? 0 : 1)
-                }
-            }
+            break
         case .name:
             result.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
         case .newest:
@@ -417,13 +760,6 @@ struct AppsCatalogView: View {
                     }
                     .accessibilityLabel("سجل التحميلات")
 
-                    Button {
-                        personalization.setUpdateNotificationsEnabled(!personalization.updateNotificationsEnabled)
-                    } label: {
-                        Image(systemName: personalization.updateNotificationsEnabled ? "bell.badge.fill" : "bell")
-                    }
-                    .accessibilityLabel("تنبيهات تحديث التطبيقات المفضلة")
-
                 }
             }
             .sheet(isPresented: $isHistoryPresented) {
@@ -437,30 +773,13 @@ struct AppsCatalogView: View {
             }
         }
         .task {
+            _ = AppsCatalogPersonalization.shared
             await loadPrivateFeeds()
         }
     }
 
     private var catalogControls: some View {
-        HStack(spacing: 8) {
-            Button {
-                favoritesOnly.toggle()
-                if favoritesOnly { recentOnly = false }
-            } label: {
-                Label("المفضلة", systemImage: favoritesOnly ? "heart.fill" : "heart")
-            }
-            .tint(favoritesOnly ? .pink : .accentColor)
-            .buttonStyle(.bordered)
-
-            Button {
-                recentOnly.toggle()
-                if recentOnly { favoritesOnly = false }
-            } label: {
-                Label("الأخيرة", systemImage: "clock")
-            }
-            .tint(recentOnly ? .accentColor : .secondary)
-            .buttonStyle(.bordered)
-
+        HStack {
             Spacer(minLength: 0)
 
             Menu {
@@ -516,7 +835,6 @@ struct AppsCatalogView: View {
     private func appRow(_ entry: AppsCatalogEntry) -> some View {
         HStack(spacing: 12) {
             Button {
-                personalization.recordViewed(entry.id)
                 selectedRoute = SourceAppsView.SourceAppRoute(
                     sourceURL: entry.sourceURL, source: entry.source, app: entry.app
                 )
@@ -551,18 +869,7 @@ struct AppsCatalogView: View {
             }
             .buttonStyle(.plain)
 
-            VStack(spacing: 8) {
-                DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
-                Button {
-                    personalization.toggleFavorite(entry.id)
-                } label: {
-                    Image(systemName: personalization.isFavorite(entry.id) ? "heart.fill" : "heart")
-                        .foregroundStyle(personalization.isFavorite(entry.id) ? Color.pink : Color.secondary)
-                        .font(.system(size: 17, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(personalization.isFavorite(entry.id) ? "إزالة من المفضلة" : "إضافة إلى المفضلة")
-            }
+            DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
         }
         .padding(.vertical, 5)
     }
