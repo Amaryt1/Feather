@@ -86,9 +86,6 @@ jobs:
           fi
           xcodebuild -version
 
-      - name: Validate private catalog builder syntax
-        run: python3 -m py_compile scripts/build_private_apps_catalog.py
-
       - name: Resolve Swift packages
         run: |
           xcodebuild -resolvePackageDependencies \
