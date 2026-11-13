@@ -11,6 +11,8 @@ on:
       - "AltSourceKit/**"
       - "Feather.xcodeproj/**"
       - ".github/workflows/apps-catalog-build.yml"
+      - "scripts/build_private_apps_catalog.py"
+      - ".github/workflows/refresh-private-apps-catalog.yml"
   pull_request:
     branches: [main]
     paths:
@@ -21,6 +23,8 @@ on:
       - "AltSourceKit/**"
       - "Feather.xcodeproj/**"
       - ".github/workflows/apps-catalog-build.yml"
+      - "scripts/build_private_apps_catalog.py"
+      - ".github/workflows/refresh-private-apps-catalog.yml"
   workflow_dispatch:
 
 permissions:
@@ -47,6 +51,9 @@ jobs:
             sudo xcode-select -s /Applications/Xcode_26.3.0.app
           fi
           xcodebuild -version
+
+      - name: Validate private catalog builder syntax
+        run: python3 -m py_compile scripts/build_private_apps_catalog.py
 
       - name: Resolve Swift packages
         run: |
