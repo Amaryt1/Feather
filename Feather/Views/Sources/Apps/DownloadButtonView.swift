@@ -88,12 +88,12 @@ struct DownloadButtonView: View {
 		.onChange(of: downloadManager.downloads.description) { _ in
 			setupObserver()
 		}
-		.animation(.easeInOut(duration: 0.3), value: downloadManager.getDownload(by: app.currentUniqueId) != nil)
+		.animation(.easeInOut(duration: 0.3), value: downloadManager.getDownload(by: effectiveDownloadID) != nil)
 	}
 
 	private func setupObserver() {
 		cancellable?.cancel()
-		guard let download = downloadManager.getDownload(by: app.currentUniqueId) else {
+		guard let download = downloadManager.getDownload(by: effectiveDownloadID) else {
 			downloadProgress = 0
 			return
 		}
