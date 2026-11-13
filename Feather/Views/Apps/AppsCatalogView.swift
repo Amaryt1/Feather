@@ -79,7 +79,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         let text = [app.category, app.name, app.subtitle, app.description,
-                    app.localizedDescription, app.developer]
+                    app.localizedDescription, app.developer, app.id]
             .compactMap { $0 }
             .joined(separator: " ")
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
@@ -116,7 +116,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
 
         // Use the app's descriptive metadata when the source has no specific category.
         if has(["emulator", "emulation", "retroarch", "ppsspp", "delta emulator", "محاكي", "محاكاة"]) { return .emulators }
-        if has(["video game", "mobile game", "gameplay", "gaming", "arcade", "rpg", "minecraft", "terraria", "fortnite", "pubg", "roblox", "clash of clans", "subway surfers", "لعبة", "ألعاب", "العاب"]) { return .games }
+        if has(["video game", "mobile game", "gameplay", "gaming", "arcade", "rpg", "minecraft", "terraria", "fortnite", "pubg", "roblox", "clash of clans", "clash royale", "subway surfers", "gta:", "grand theft auto", "bully", "8 ball pool", "agar.io", "car parking", "brawl stars", "call of duty", "free fire", "among us", "stardew valley", "pokemon", "لعبة", "ألعاب", "العاب"]) { return .games }
         if has(["artificial intelligence", "ai assistant", "chatgpt", "openai", "claude", "gemini", "copilot", "stable diffusion", "machine learning", "ذكاء اصطناعي"]) { return .ai }
         if has(["jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine", "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza", "tweak", "جيلبريك", "تويك"]) { return .jailbreak }
         if has(["signing", "signer", "ksign", "esign", "scarlet", "sideload", "ipa installer", "certificate manager", "توقيع", "تثبيت ipa", "شهادات"]) { return .signing }
@@ -126,7 +126,10 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         if has(["movie", "movies", "tv series", "streaming", "iptv", "anime", "video player", "music player", "podcast", "cinema", "film", "أفلام", "مسلسلات", "انمي", "أنمي", "مشاهدة", "بث"]) { return .media }
         if has(["language learning", "dictionary", "flashcards", "education", "school", "university", "تعليم", "قاموس", "تعلم", "دراسة"]) { return .education }
         if has(["task manager", "todo", "notes", "calendar", "office suite", "document editor", "إنتاجية", "مهام", "ملاحظات"]) { return .productivity }
-        if has(["social network", "messenger", "chat app", "telegram", "discord", "reddit", "social media", "مراسلة", "تواصل اجتماعي"]) { return .social }
+        if has(["social network", "messenger", "chat app", "telegram", "discord", "reddit", "social media", "instagram", "facebook", "tiktok", "whatsapp", "snapchat", "twitter", "تواصل اجتماعي", "مراسلة"]) { return .social }
+        if has(["youtube", "netflix", "spotify", "twitch", "vlc", "soundcloud", "music streaming", "video streaming"]) { return .media }
+        if has(["capcut", "picsart", "canva", "alight motion", "video star", "kinemaster", "lightroom", "photoshop", "procreate", "rem editing"]) { return .design }
+        if has(["notion", "todoist", "ticktick", "goodnotes", "notability", "noteshelf", "microsoft office", "google drive", "dropbox", "pdf editor"]) { return .productivity }
         if has(["theme", "icon pack", "customization", "widgets", "wallpaper", "lock screen", "تخصيص", "ثيمات", "خلفيات"]) { return .customization }
         if has(["banking", "bank account", "investment", "stock market", "crypto wallet", "payment", "wallet", "bank", "مصرف", "محفظة", "دفع"]) { return .finance }
         if has(["shopping", "marketplace", "online store", "e-commerce", "retail", "تسوق", "متجر", "شراء"]) { return .shopping }
