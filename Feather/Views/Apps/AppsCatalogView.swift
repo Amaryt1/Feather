@@ -644,31 +644,31 @@ private final class AppsCatalogMemoryCache {
 @MainActor
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
-    private static let privateFeedURLs: [URL] = [
+    nonisolated private static let privateFeedURLs: [URL] = [
         URL(string: "https://ipaomtk-source.shrubhub.workers.dev/ipaomtk.json")!,
         URL(string: "https://iosvizor-source.shrubhub.workers.dev/iosvizor.json")!,
         URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json")!,
         URL(string: "https://ittza7aa.com/repo.json")!
     ]
-    private static let privateCatalogManifestURL = URL(
+    nonisolated private static let privateCatalogManifestURL = URL(
         string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/manifest.json"
     )!
 
-    private static var privateCatalogCacheDirectory: URL? {
+    nonisolated private static var privateCatalogCacheDirectory: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
             .appendingPathComponent("FeatherPrivateAppsCatalog", isDirectory: true)
     }
 
-    private static var cachedCatalogURL: URL? {
+    nonisolated private static var cachedCatalogURL: URL? {
         privateCatalogCacheDirectory?.appendingPathComponent("catalog.json.gz")
     }
 
-    private static var cachedManifestURL: URL? {
+    nonisolated private static var cachedManifestURL: URL? {
         privateCatalogCacheDirectory?.appendingPathComponent("manifest.json")
     }
 
-    private static var cachedIndexURL: URL? {
+    nonisolated private static var cachedIndexURL: URL? {
         privateCatalogCacheDirectory?.appendingPathComponent("catalog-index.json")
     }
 
@@ -696,13 +696,13 @@ struct AppsCatalogView: View {
         }.value
     }
 
-    private static func readCachedManifest() -> PrivateAppsCatalogManifest? {
+    nonisolated private static func readCachedManifest() -> PrivateAppsCatalogManifest? {
         guard let url = cachedManifestURL,
               let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(PrivateAppsCatalogManifest.self, from: data)
     }
 
-    private static func readCachedCatalogData() -> Data? {
+    nonisolated private static func readCachedCatalogData() -> Data? {
         guard let url = cachedCatalogURL else { return nil }
         return try? Data(contentsOf: url)
     }
