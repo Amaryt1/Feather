@@ -65,6 +65,9 @@ jobs:
           print("Four unique feeds and external catalog output verified.")
           PY
 
+      - name: Build and validate a live four-feed snapshot
+        run: python scripts/build_private_apps_catalog.py
+
   build:
     runs-on: macos-26
     strategy:
