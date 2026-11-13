@@ -603,17 +603,18 @@ struct AppsCatalogView: View {
     @State private var catalogEntries: [AppsCatalogEntry] = []
     @State private var entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
     @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
+    @State private var recentlyUpdatedEntries: [AppsCatalogEntry] = []
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
 
-    /// Feed publication dates are the source of truth for the recent-updates shelf.
-    /// Keep the window rolling so an app expires exactly seven days after its update.
-    private var recentlyUpdatedEntries: [AppsCatalogEntry] {
-        let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+    /// Build the seven-day shelf only when the catalog index changes, not on every
+    /// SwiftUI body refresh, so large catalogs remain responsive.
+    private static func recentUpdates(in entries: [AppsCatalogEntry], now: Date = Date()) -> [AppsCatalogEntry] {
+        let cutoff = now.addingTimeInterval(-7 * 24 * 60 * 60)
         return entries
             .filter { entry in
                 guard let updatedAt = entry.app.currentDate?.date else { return false }
-                return updatedAt >= cutoff && updatedAt <= Date()
+                return updatedAt >= cutoff && updatedAt <= now
             }
             .sorted {
                 ($0.app.currentDate?.date ?? .distantPast) > ($1.app.currentDate?.date ?? .distantPast)
@@ -674,6 +675,7 @@ struct AppsCatalogView: View {
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
+        recentlyUpdatedEntries = Self.recentUpdates(in: index.entries)
     }
 
     @MainActor
@@ -685,6 +687,7 @@ struct AppsCatalogView: View {
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
+        recentlyUpdatedEntries = Self.recentUpdates(in: index.entries)
     }
 
     private var visibleCategories: [AppsCatalogCategory] {
