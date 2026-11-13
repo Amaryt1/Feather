@@ -593,7 +593,6 @@ struct AppsCatalogView: View {
     @State private var isLoading = true
     @State private var hasLoaded = false
     @State private var sortOption: AppsCatalogSort = .recommended
-    @State private var isHistoryPresented = false
     @State private var isDownloadsPresented = false
     @State private var isRecentUpdatesPresented = false
 
@@ -788,11 +787,6 @@ struct AppsCatalogView: View {
                     }
                     .accessibilityLabel("مدير التحميلات")
 
-                    Button { isHistoryPresented = true } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                    }
-                    .accessibilityLabel("سجل التحميلات")
-
                     Button { isRecentUpdatesPresented = true } label: {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .overlay(alignment: .topTrailing) {
@@ -811,9 +805,6 @@ struct AppsCatalogView: View {
                     .accessibilityLabel("التحديثات الأخيرة، \(recentlyUpdatedEntries.count) تطبيق")
 
                 }
-            }
-            .sheet(isPresented: $isHistoryPresented) {
-                AppsCatalogHistoryView()
             }
             .sheet(isPresented: $isDownloadsPresented) {
                 AppsCatalogDownloadsView()
