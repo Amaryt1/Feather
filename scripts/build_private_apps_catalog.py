@@ -128,6 +128,11 @@ def main() -> None:
         separators=(",", ":"),
     ).encode("utf-8")
     compressed = gzip.compress(serialized, compresslevel=9, mtime=0)
+    if len(compressed) >= 90 * 1024 * 1024:
+        raise RuntimeError(
+            "compressed catalog exceeds the safe GitHub repository file limit; "
+            "publish per-source shards instead of committing an oversized file"
+        )
 
     # Validate the exact gzip artifact before publishing either output.
     decoded = json.loads(gzip.decompress(compressed).decode("utf-8"))
