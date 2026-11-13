@@ -1,0 +1,51 @@
+name: Refresh private four-feed apps catalog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 */6 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/build_private_apps_catalog.py"
+      - ".github/workflows/refresh-private-apps-catalog.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-private-four-feed-catalog
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate builder syntax
+        run: python -m py_compile scripts/build_private_apps_catalog.py
+
+      - name: Build and validate the four-feed catalog
+        run: python scripts/build_private_apps_catalog.py
+
+      - name: Commit catalog snapshot when changed
+        run: |
+          git add catalogs/private-apps/catalog.json.gz catalogs/private-apps/manifest.json
+          if git diff --cached --quiet; then
+            echo "Private four-feed catalog is already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Refresh private four-feed apps catalog"
+          git pull --rebase origin main
+          git push origin HEAD:main
