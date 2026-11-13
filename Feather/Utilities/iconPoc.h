@@ -11,7 +11,7 @@
 @import UIKit;
 @import ObjectiveC;
 
-UIImage* iconTest(NSURL *bundleURL);
+UIImage* iconTest(NSURL *bundleURL, BOOL preservesOriginalColors);
 static CGColorRef FRCreateCGColorFromHex(void);
 
 #endif /* iconPoc_h */
