@@ -942,7 +942,7 @@ private struct AppsCatalogPremiumCard: View {
         .rotation3DEffect(.degrees(tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.72)
         .scaleEffect(dragOffset == .zero ? 1 : 1.025)
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.72), value: dragOffset)
-        .gesture(
+        .simultaneousGesture(
             DragGesture(minimumDistance: 8)
                 .updating($dragOffset) { value, state, _ in
                     state = CGSize(
