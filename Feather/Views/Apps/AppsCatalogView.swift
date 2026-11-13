@@ -543,6 +543,75 @@ private struct AppsCatalogIndex: Codable, Sendable {
     let entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]]
     let categoryCounts: [AppsCatalogCategory: Int]
 
+    private struct EntryReference: Codable {
+        let sourceIndex: Int
+        let appIndex: Int
+        let category: AppsCatalogCategory
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case repositories, entryReferences
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        repositories = try container.decode([SourceAppsView.SourceRepositoryContext].self, forKey: .repositories)
+        let references = try container.decode([EntryReference].self, forKey: .entryReferences)
+        var restored: [AppsCatalogEntry] = []
+        restored.reserveCapacity(references.count)
+        var buckets: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
+        var counts: [AppsCatalogCategory: Int] = [:]
+        for reference in references {
+            guard repositories.indices.contains(reference.sourceIndex) else { continue }
+            let context = repositories[reference.sourceIndex]
+            guard context.repository.apps.indices.contains(reference.appIndex) else { continue }
+            let entry = AppsCatalogEntry(
+                sourceURL: context.sourceURL,
+                source: context.repository,
+                app: context.repository.apps[reference.appIndex],
+                category: reference.category
+            )
+            restored.append(entry)
+            buckets[reference.category, default: []].append(entry)
+            counts[reference.category, default: 0] += 1
+        }
+        entries = restored
+        entriesByCategory = buckets
+        categoryCounts = counts
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(repositories, forKey: .repositories)
+
+        var sourceIndices: [String: Int] = [:]
+        var appIndices: [[String: Int]] = []
+        for (sourceIndex, context) in repositories.enumerated() {
+            if let url = context.sourceURL {
+                sourceIndices[url.absoluteString] = sourceIndex
+            }
+            var indices: [String: Int] = [:]
+            for (appIndex, app) in context.repository.apps.enumerated() {
+                indices[app.currentUniqueId] = appIndex
+            }
+            appIndices.append(indices)
+        }
+
+        var references: [EntryReference] = []
+        references.reserveCapacity(entries.count)
+        for entry in entries {
+            guard let sourceURL = entry.sourceURL?.absoluteString,
+                  let sourceIndex = sourceIndices[sourceURL],
+                  let appIndex = appIndices[sourceIndex][entry.app.currentUniqueId] else { continue }
+            references.append(EntryReference(
+                sourceIndex: sourceIndex,
+                appIndex: appIndex,
+                category: entry.category
+            ))
+        }
+        try container.encode(references, forKey: .entryReferences)
+    }
+
     private static func cacheIdentity(sourceURL: URL?, app: ASRepository.App) -> String {
         "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)|\(app.currentName)|\(app.currentVersion ?? "")|\(app.currentDownloadUrl?.absoluteString ?? "")"
     }
@@ -569,8 +638,6 @@ private struct AppsCatalogIndex: Codable, Sendable {
                 let developer = (app.developer ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 let version = (app.currentVersion ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 let downloadIdentity = downloadURL.absoluteString
-                // Keep modified apps and alternate builds. Only collapse entries that
-                // agree on bundle ID, display name, version, and exact download URL.
                 let identity = bundle.isEmpty
                     ? "name|\(normalizedName)|developer|\(developer)|version|\(version)|url|\(downloadIdentity)"
                     : "bundle|\(bundle)|name|\(normalizedName)|version|\(version)|url|\(downloadIdentity)"
@@ -593,7 +660,6 @@ private struct AppsCatalogIndex: Codable, Sendable {
                      entriesByCategory: buckets, categoryCounts: counts)
     }
 }
-
 
 private struct PrivateAppsCatalogManifest: Codable, Sendable {
     let schemaVersion: Int
