@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-13T18:17:33.326627+00:00",
+  "catalogURL": "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/catalog.json.gz",
+  "sha256": "443bbfc48959c40d5391ebf26f9b1288241eddf3ffdbf063e53b300ebdde4a66",
+  "compressedBytes": 1893750,
+  "uncompressedBytes": 13147127,
+  "sourceCount": 4,
+  "appCount": 15724,
+  "sources": [
+    {
+      "name": "IPAOMTK",
+      "sourceURL": "https://ipaomtk-source.shrubhub.workers.dev/ipaomtk.json",
+      "appCount": 10535
+    },
+    {
+      "name": "iOSVizor",
+      "sourceURL": "https://iosvizor-source.shrubhub.workers.dev/iosvizor.json",
+      "appCount": 2949
+    },
+    {
+      "name": "AltMaker",
+      "sourceURL": "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json",
+      "appCount": 446
+    },
+    {
+      "name": "Ittza7aa",
+      "sourceURL": "https://ittza7aa.com/repo.json",
+      "appCount": 1794
+    }
+  ]
+}
