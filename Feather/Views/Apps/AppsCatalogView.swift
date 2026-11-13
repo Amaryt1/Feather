@@ -604,7 +604,6 @@ private struct PrivateAppsCatalogSource: Decodable {
 
 private struct PrivateAppsCatalogPayload: Decodable {
     let schemaVersion: Int
-    let generatedAt: String
     let sources: [PrivateAppsCatalogSource]
 }
 
@@ -754,7 +753,14 @@ struct AppsCatalogView: View {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: manifest.catalogURL)
+            var catalogComponents = URLComponents(url: manifest.catalogURL, resolvingAgainstBaseURL: false)
+            catalogComponents?.queryItems = (catalogComponents?.queryItems ?? [])
+                + [URLQueryItem(name: "v", value: manifest.sha256)]
+            let downloadURL = catalogComponents?.url ?? manifest.catalogURL
+            var request = URLRequest(url: downloadURL, timeoutInterval: 180)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Feather-PrivateAppsCatalog/1.0", forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
                   let contexts = await catalogContexts(
