@@ -190,7 +190,7 @@
 @end
 
 
-UIImage* iconTest(NSURL *bundleURL) {
+UIImage* iconTest(NSURL *bundleURL, BOOL preservesOriginalColors) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         void* handle = dlopen("/System/Library/PrivateFrameworks/IconServices.framework/IconServices", RTLD_LAZY|RTLD_GLOBAL);
@@ -209,9 +209,11 @@ UIImage* iconTest(NSURL *bundleURL) {
     descriptor.drawBorder = YES;
     descriptor.ignoreCache = YES;
     descriptor.scale = UIScreen.mainScreen.scale;
-	descriptor.tintColor =
-		[[PrivClass(IFColor) alloc]
-			initWithCGColor:FRCreateCGColorFromHex()];
+	if (!preservesOriginalColors) {
+		descriptor.tintColor =
+			[[PrivClass(IFColor) alloc]
+				initWithCGColor:FRCreateCGColorFromHex()];
+	}
 
     descriptor.variantOptions = 0;
     // 0 = light mode, 1 = dark mode
@@ -238,7 +240,7 @@ UIImage* iconTest(NSURL *bundleURL) {
     if (@available(iOS 18.0, *)) {
         // 0 = normal, 2 = tinted mode, 3 = liquid glass (gray scale)
 		if (@available(iOS 18.2, *)) {
-			descriptor.appearanceVariant = (variant == 0) ? 0 : 2;
+			descriptor.appearanceVariant = (!preservesOriginalColors && variant != 0) ? 2 : 0;
 		}
         descriptor.specialIconOptions = 2;
     }
