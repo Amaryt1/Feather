@@ -734,16 +734,31 @@ struct AppsCatalogView: View {
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List {
-                        Section {
-                            ForEach(filteredEntries) { entry in appRow(entry) }
-                        } header: {
-                            Text("\(filteredEntries.count) تطبيق")
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 158), spacing: 12)], spacing: 14) {
+                            ForEach(filteredEntries) { entry in
+                                AppsCatalogPremiumCard(entry: entry) {
+                                    selectedRoute = SourceAppsView.SourceAppRoute(
+                                        sourceURL: entry.sourceURL, source: entry.source, app: entry.app
+                                    )
+                                }
+                            }
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
                     }
-                    .listStyle(.plain)
                     .refreshable {
                         await loadPrivateFeeds(force: true)
+                    }
+                    .overlay(alignment: .top) {
+                        Text("\(filteredEntries.count) تطبيق")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(.top, 4)
+                            .allowsHitTesting(false)
                     }
                 }
             }
@@ -831,24 +846,52 @@ struct AppsCatalogView: View {
         category == .all ? entries.count : categoryCounts[category, default: 0]
     }
 
-    @ViewBuilder
-    private func appRow(_ entry: AppsCatalogEntry) -> some View {
-        HStack(spacing: 12) {
-            Button {
-                selectedRoute = SourceAppsView.SourceAppRoute(
-                    sourceURL: entry.sourceURL, source: entry.source, app: entry.app
-                )
-            } label: {
-                HStack(spacing: 12) {
-                    LazyImage(url: entry.app.iconURL) { state in
-                        if let image = state.image {
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            Image("App_Unknown").resizable().aspectRatio(contentMode: .fit).padding(10)
+}
+
+private struct AppsCatalogPremiumCard: View {
+    let entry: AppsCatalogEntry
+    let open: () -> Void
+
+    @GestureState private var dragOffset: CGSize = .zero
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var tiltX: Double { reduceMotion ? 0 : Double(-dragOffset.height / 18) }
+    private var tiltY: Double { reduceMotion ? 0 : Double(dragOffset.width / 18) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Button(action: open) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ZStack(alignment: .topTrailing) {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.accentColor.opacity(0.22), Color(uiColor: .secondarySystemBackground)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        LazyImage(url: entry.app.iconURL) { state in
+                            if let image = state.image {
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                Image("App_Unknown").resizable().aspectRatio(contentMode: .fit).padding(18)
+                            }
                         }
+                        .frame(width: 76, height: 76)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(14)
+
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .padding(9)
+                            .background(.thinMaterial, in: Circle())
+                            .padding(9)
                     }
-                    .frame(width: 58, height: 58)
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .frame(height: 126)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.app.currentName)
@@ -856,24 +899,59 @@ struct AppsCatalogView: View {
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Text(entry.app.currentDescription ?? "تطبيق")
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(height: 34, alignment: .topLeading)
                         Text(entry.category.title)
-                            .font(.caption)
+                            .font(.caption2.weight(.semibold))
                             .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .contentShape(Rectangle())
+                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
             .buttonStyle(.plain)
 
-            DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(entry.app.currentVersion.map { "v\($0)" } ?? "Feather Store")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+                    .scaleEffect(0.92)
+            }
         }
-        .padding(.vertical, 5)
+        .padding(11)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                }
+        }
+        .shadow(color: Color.black.opacity(0.07), radius: 14, y: 7)
+        .rotation3DEffect(.degrees(tiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.72)
+        .rotation3DEffect(.degrees(tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.72)
+        .scaleEffect(dragOffset == .zero ? 1 : 1.025)
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.72), value: dragOffset)
+        .gesture(
+            DragGesture(minimumDistance: 8)
+                .updating($dragOffset) { value, state, _ in
+                    state = CGSize(
+                        width: max(-18, min(18, value.translation.width / 3)),
+                        height: max(-18, min(18, value.translation.height / 3))
+                    )
+                }
+        )
+        .accessibilityElement(children: .contain)
     }
-
-
 }
 
