@@ -697,7 +697,6 @@ private struct PrivateAppsCatalogPayload: Decodable {
 private struct PrivateAppsCatalogIndexCache: Codable {
     let schemaVersion: Int
     let sha256: String
-    let categories: [String: String]
     let index: AppsCatalogIndex?
 }
 
@@ -765,10 +764,7 @@ struct AppsCatalogView: View {
     private static func saveCatalogIndex(_ index: AppsCatalogIndex, sha256: String?) async {
         guard let sha256, let url = cachedIndexURL else { return }
         await Task.detached(priority: .utility) {
-            var categories: [String: String] = [:]
-            categories.reserveCapacity(index.entries.count)
-            for entry in index.entries { categories[entry.id] = entry.category.rawValue }
-            let cache = PrivateAppsCatalogIndexCache(schemaVersion: 2, sha256: sha256, categories: categories, index: index)
+            let cache = PrivateAppsCatalogIndexCache(schemaVersion: 2, sha256: sha256, index: index)
             guard let data = try? JSONEncoder().encode(cache) else { return }
             try? data.write(to: url, options: .atomic)
         }.value
