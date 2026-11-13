@@ -375,9 +375,18 @@ struct AppsCatalogView: View {
                             .foregroundStyle(.secondary)
                         Text(searchText.isEmpty ? "لا توجد تطبيقات في هذا القسم" : "لا توجد نتائج")
                             .font(.headline)
-                        Text("اسحب للأسفل لتحديث قائمة التطبيقات.")
+                        Text("تحقق من اتصال الإنترنت أو جرّب تحميل القائمة من جديد.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                        if catalogEntries.isEmpty {
+                            Button {
+                                Task { await loadPrivateFeeds(force: true) }
+                            } label: {
+                                Label("إعادة تحميل التطبيقات", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isLoading)
+                        }
                     }
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -390,6 +399,9 @@ struct AppsCatalogView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .refreshable {
+                        await loadPrivateFeeds(force: true)
+                    }
                 }
             }
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
