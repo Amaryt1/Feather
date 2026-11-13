@@ -670,13 +670,15 @@ struct AppsCatalogView: View {
         privateCatalogCacheDirectory?.appendingPathComponent("catalog-index.json")
     }
 
-    private static func readCachedCategoryMap(sha256: String?) -> [String: String] {
-        guard let sha256, let url = cachedIndexURL,
-              let data = try? Data(contentsOf: url),
-              let cache = try? JSONDecoder().decode(PrivateAppsCatalogIndexCache.self, from: data),
-              cache.schemaVersion == 1,
-              cache.sha256 == sha256 else { return [:] }
-        return cache.categories
+    private static func readCachedCategoryMap(sha256: String?) async -> [String: String] {
+        guard let sha256, let url = cachedIndexURL else { return [:] }
+        return await Task.detached(priority: .utility) {
+            guard let data = try? Data(contentsOf: url),
+                  let cache = try? JSONDecoder().decode(PrivateAppsCatalogIndexCache.self, from: data),
+                  cache.schemaVersion == 1,
+                  cache.sha256 == sha256 else { return [:] }
+            return cache.categories
+        }.value
     }
 
     private static func saveCategoryMap(_ categories: [String: String], sha256: String?) async {
@@ -902,21 +904,29 @@ struct AppsCatalogView: View {
 
         // Reuse the already-decoded and indexed catalog when this view is recreated.
         // This is the fast path for every subsequent visit during the app session.
-        if !force, let cached = await AppsCatalogMemoryCache.shared.snapshot() {
+        if let cached = await AppsCatalogMemoryCache.shared.snapshot() {
             apply(cached.index)
             hasLoaded = true
             isLoading = false
-            Task { await refreshPrivateCatalogInBackground() }
+            if force {
+                await refreshPrivateCatalogInBackground()
+            } else {
+                Task { await refreshPrivateCatalogInBackground() }
+            }
             return
         }
 
         // On a cold app launch, decode the last valid disk snapshot once. The
         // category map avoids repeating the expensive text classification pass.
-        if !force, let cached = await Self.loadCachedPrivateCatalog() {
+        if let cached = await Self.loadCachedPrivateCatalog() {
             await applyRepositories(cached.contexts, sha256: cached.sha256)
             hasLoaded = true
             isLoading = false
-            Task { await refreshPrivateCatalogInBackground() }
+            if force {
+                await refreshPrivateCatalogInBackground()
+            } else {
+                Task { await refreshPrivateCatalogInBackground() }
+            }
             return
         }
 
@@ -967,7 +977,7 @@ struct AppsCatalogView: View {
         _ contexts: [SourceAppsView.SourceRepositoryContext],
         sha256: String?
     ) async {
-        let cachedCategories = Self.readCachedCategoryMap(sha256: sha256)
+        let cachedCategories = await Self.readCachedCategoryMap(sha256: sha256)
         let index = await Task.detached(priority: .userInitiated) {
             AppsCatalogIndex.build(from: contexts, cachedCategories: cachedCategories)
         }.value
