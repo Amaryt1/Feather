@@ -69,6 +69,7 @@ final class FRAppIconLoader: ObservableObject {
 struct FRAppIconView: View {
 	private let app: AppInfoPresentable?
 	private let size: CGFloat
+	private let preservesOriginalColors: Bool
 
 	@Environment(\.colorScheme) private var colorScheme
 	@StateObject private var loader = FRAppIconLoader()
@@ -77,9 +78,10 @@ struct FRAppIconView: View {
 	@AppStorage("Feather.shouldTintIcons") private var shouldTintIcons: Bool = false
 	@AppStorage("Feather.shouldChangeIconsBasedOffStyle") private var shouldChangeIconsBasedOffStyle: Bool = false
 	
-	init(app: AppInfoPresentable? = nil, size: CGFloat = 87) {
+	init(app: AppInfoPresentable? = nil, size: CGFloat = 87, preservesOriginalColors: Bool = false) {
 		self.app = app
 		self.size = size
+		self.preservesOriginalColors = preservesOriginalColors
 	}
 
 	private var appearance: FRIconAppearance {
@@ -89,11 +91,23 @@ struct FRAppIconView: View {
 	var body: some View {
 		Group {
 			if let image = loader.image {
-				Image(uiImage: image)
-					.appIconStyle(size: size)
+				if preservesOriginalColors {
+					Image(uiImage: image)
+						.renderingMode(.original)
+						.appIconStyle(size: size)
+				} else {
+					Image(uiImage: image)
+						.appIconStyle(size: size)
+				}
 			} else {
-				Image("App_Unknown")
-					.appIconStyle(size: size)
+				if preservesOriginalColors {
+					Image("App_Unknown")
+						.renderingMode(.original)
+						.appIconStyle(size: size)
+				} else {
+					Image("App_Unknown")
+						.appIconStyle(size: size)
+				}
 			}
 		}
 		.task(id: "\(appearance.rawValue)\(selectedColorHex)\(shouldTintIcons)\(shouldChangeIconsBasedOffStyle)") {
