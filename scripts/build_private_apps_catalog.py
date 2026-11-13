@@ -122,9 +122,11 @@ def main() -> None:
             "appCount": len(apps),
         })
 
+    # Keep the catalog bytes deterministic. The generation timestamp belongs
+    # in the manifest, not in the large payload, so unchanged feeds do not force
+    # every client to download the full snapshot again.
     payload = {
         "schemaVersion": 1,
-        "generatedAt": generated_at,
         "sources": sources,
     }
     serialized = json.dumps(
@@ -149,6 +151,14 @@ def main() -> None:
             raise RuntimeError("generated catalog contains an invalid repository")
 
     digest = hashlib.sha256(compressed).hexdigest()
+    if MANIFEST_OUTPUT.exists():
+        try:
+            previous_manifest = json.loads(MANIFEST_OUTPUT.read_text(encoding="utf-8"))
+            if previous_manifest.get("sha256") == digest:
+                generated_at = previous_manifest.get("generatedAt") or generated_at
+        except (OSError, json.JSONDecodeError):
+            pass
+
     manifest = {
         "schemaVersion": 1,
         "generatedAt": generated_at,
