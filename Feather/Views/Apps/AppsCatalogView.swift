@@ -1,4 +1,5 @@
 import SwiftUI
+import CryptoKit
 import AltSourceKit
 import NimbleViews
 import NimbleJSON
@@ -531,7 +532,9 @@ private struct AppsCatalogEntry: Identifiable, Sendable {
     let source: ASRepository
     let app: ASRepository.App
     let category: AppsCatalogCategory
-    var id: String { "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)" }
+    var id: String {
+        "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)|\(app.currentName)|\(app.currentVersion ?? "")|\(app.currentDownloadUrl?.absoluteString ?? "")"
+    }
 }
 
 private struct AppsCatalogIndex: Sendable {
@@ -557,7 +560,13 @@ private struct AppsCatalogIndex: Sendable {
 
                 let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 let developer = (app.developer ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                let identity = bundle.isEmpty ? "name|\(normalizedName)|\(developer)" : "bundle|\(bundle)"
+                let version = (app.currentVersion ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                let downloadIdentity = downloadURL.absoluteString
+                // Keep modified apps and alternate builds. Only collapse entries that
+                // agree on bundle ID, display name, version, and exact download URL.
+                let identity = bundle.isEmpty
+                    ? "name|\(normalizedName)|developer|\(developer)|version|\(version)|url|\(downloadIdentity)"
+                    : "bundle|\(bundle)|name|\(normalizedName)|version|\(version)|url|\(downloadIdentity)"
                 guard seen.insert(identity).inserted else { continue }
 
                 entries.append(.init(sourceURL: context.sourceURL, source: context.repository,
@@ -577,6 +586,29 @@ private struct AppsCatalogIndex: Sendable {
 }
 
 
+private struct PrivateAppsCatalogManifest: Codable, Sendable {
+    let schemaVersion: Int
+    let generatedAt: String
+    let catalogURL: URL
+    let sha256: String
+    let compressedBytes: Int
+    let uncompressedBytes: Int
+    let sourceCount: Int
+    let appCount: Int
+}
+
+private struct PrivateAppsCatalogSource: Decodable {
+    let sourceURL: URL
+    let repository: ASRepository
+}
+
+private struct PrivateAppsCatalogPayload: Decodable {
+    let schemaVersion: Int
+    let generatedAt: String
+    let sources: [PrivateAppsCatalogSource]
+}
+
+
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
     private static let privateFeedURLs: [URL] = [
@@ -585,6 +617,149 @@ struct AppsCatalogView: View {
         URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json")!,
         URL(string: "https://ittza7aa.com/repo.json")!
     ]
+    private static let privateCatalogManifestURL = URL(
+        string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/manifest.json"
+    )!
+
+    private static var privateCatalogCacheDirectory: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("FeatherPrivateAppsCatalog", isDirectory: true)
+    }
+
+    private static var cachedCatalogURL: URL? {
+        privateCatalogCacheDirectory?.appendingPathComponent("catalog.json.gz")
+    }
+
+    private static var cachedManifestURL: URL? {
+        privateCatalogCacheDirectory?.appendingPathComponent("manifest.json")
+    }
+
+    private static func readCachedManifest() -> PrivateAppsCatalogManifest? {
+        guard let url = cachedManifestURL,
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(PrivateAppsCatalogManifest.self, from: data)
+    }
+
+    private static func readCachedCatalogData() -> Data? {
+        guard let url = cachedCatalogURL else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    private static func saveCatalog(_ data: Data, manifest: PrivateAppsCatalogManifest) {
+        guard let directory = privateCatalogCacheDirectory,
+              let catalogURL = cachedCatalogURL,
+              let manifestURL = cachedManifestURL else { return }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            try data.write(to: catalogURL, options: .atomic)
+            let manifestData = try JSONEncoder().encode(manifest)
+            try manifestData.write(to: manifestURL, options: .atomic)
+        } catch {
+            // The in-memory catalog remains usable if the optional disk cache fails.
+        }
+    }
+
+    private static func catalogContexts(
+        from compressedData: Data,
+        expectedSHA256: String
+    ) async -> [SourceAppsView.SourceRepositoryContext]? {
+        await Task.detached(priority: .userInitiated) {
+            let actualSHA256 = SHA256.hash(data: compressedData)
+                .map { String(format: "%02x", $0) }
+                .joined()
+            guard actualSHA256.caseInsensitiveCompare(expectedSHA256) == .orderedSame,
+                  let jsonData = try? GzipArchive.unarchive(archive: compressedData),
+                  let payload = try? JSONDecoder().decode(PrivateAppsCatalogPayload.self, from: jsonData),
+                  payload.schemaVersion == 1,
+                  payload.sources.count == privateFeedURLs.count,
+                  !payload.sources.isEmpty,
+                  payload.sources.allSatisfy({ !$0.repository.apps.isEmpty }) else {
+                return nil
+            }
+
+            let expectedURLs = Set(privateFeedURLs.map(\.absoluteString))
+            let receivedURLs = Set(payload.sources.map { $0.sourceURL.absoluteString })
+            guard expectedURLs == receivedURLs else { return nil }
+
+            return payload.sources.map {
+                SourceAppsView.SourceRepositoryContext(
+                    sourceURL: $0.sourceURL,
+                    repository: $0.repository
+                )
+            }
+        }.value
+    }
+
+    private static func loadCachedPrivateCatalog() async -> [SourceAppsView.SourceRepositoryContext]? {
+        guard let manifest = readCachedManifest(),
+              manifest.schemaVersion == 1,
+              manifest.sourceCount == privateFeedURLs.count,
+              let data = readCachedCatalogData() else { return nil }
+        return await catalogContexts(from: data, expectedSHA256: manifest.sha256)
+    }
+
+    private static func fetchPrivateCatalogManifest() async -> PrivateAppsCatalogManifest? {
+        var request = URLRequest(
+            url: privateCatalogManifestURL,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: 30
+        )
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return nil }
+
+            let manifest = try JSONDecoder().decode(PrivateAppsCatalogManifest.self, from: data)
+            guard manifest.schemaVersion == 1,
+                  manifest.sourceCount == privateFeedURLs.count,
+                  manifest.appCount > 0,
+                  manifest.sha256.count == 64,
+                  manifest.catalogURL.scheme?.lowercased() == "https",
+                  manifest.catalogURL.host == "raw.githubusercontent.com" else {
+                return nil
+            }
+            return manifest
+        } catch {
+            return nil
+        }
+    }
+
+    private static func fetchPrebuiltPrivateCatalog() async -> [SourceAppsView.SourceRepositoryContext]? {
+        guard let manifest = await fetchPrivateCatalogManifest() else { return nil }
+
+        if let cachedManifest = readCachedManifest(),
+           cachedManifest.sha256 == manifest.sha256,
+           let cachedData = readCachedCatalogData(),
+           let cachedContexts = await catalogContexts(
+                from: cachedData,
+                expectedSHA256: manifest.sha256
+           ) {
+            return cachedContexts
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: manifest.catalogURL)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let contexts = await catalogContexts(
+                    from: data,
+                    expectedSHA256: manifest.sha256
+                  ) else {
+                return nil
+            }
+            saveCatalog(data, manifest: manifest)
+            return contexts
+        } catch {
+            return nil
+        }
+    }
 
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
     @State private var selectedCategory: AppsCatalogCategory = .all
@@ -639,7 +814,36 @@ struct AppsCatalogView: View {
     @MainActor
     private func loadPrivateFeeds(force: Bool = false) async {
         guard !hasLoaded || force else { return }
-        isLoading = true
+
+        // A previously downloaded snapshot is decoded locally first. This makes
+        // every category available immediately on later launches, without waiting
+        // for any of the four live repositories.
+        if !force, !hasLoaded,
+           let cachedContexts = await Self.loadCachedPrivateCatalog() {
+            await applyRepositories(cachedContexts)
+            hasLoaded = true
+            isLoading = false
+            Task { await refreshPrivateCatalogInBackground() }
+            return
+        }
+
+        isLoading = repositories.isEmpty
+
+        // First install: fetch one prebuilt snapshot rather than four independent
+        // feeds. On refresh, the small manifest is checked before downloading data.
+        if let prebuiltContexts = await Self.fetchPrebuiltPrivateCatalog() {
+            await applyRepositories(prebuiltContexts)
+            hasLoaded = true
+            isLoading = false
+            return
+        }
+
+        // Compatibility fallback: if the generated catalog is not published or
+        // temporarily unreachable, retain the existing four-feed loading path.
+        guard !hasLoaded else {
+            isLoading = false
+            return
+        }
 
         let feeds = Self.privateFeedURLs
         let loadedContexts = await withTaskGroup(
@@ -661,12 +865,24 @@ struct AppsCatalogView: View {
                 .compactMap { $0.1 }
         }
 
-        let index = await Task.detached(priority: .userInitiated) {
-            AppsCatalogIndex.build(from: loadedContexts)
-        }.value
-        apply(index)
+        await applyRepositories(loadedContexts)
         hasLoaded = true
         isLoading = false
+    }
+
+    @MainActor
+    private func applyRepositories(_ contexts: [SourceAppsView.SourceRepositoryContext]) async {
+        let index = await Task.detached(priority: .userInitiated) {
+            AppsCatalogIndex.build(from: contexts)
+        }.value
+        apply(index)
+    }
+
+    @MainActor
+    private func refreshPrivateCatalogInBackground() async {
+        guard let refreshedContexts = await Self.fetchPrebuiltPrivateCatalog() else { return }
+        await applyRepositories(refreshedContexts)
+        hasLoaded = true
     }
 
     private func apply(_ index: AppsCatalogIndex) {
