@@ -595,6 +595,7 @@ struct AppsCatalogView: View {
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isHistoryPresented = false
     @State private var isDownloadsPresented = false
+    @State private var isRecentUpdatesPresented = false
 
     // Build the catalog index once when repositories change. Rebuilding this
     // 27k-app index from body-computed properties made every category redraw
@@ -604,6 +605,20 @@ struct AppsCatalogView: View {
     @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
+
+    /// Feed publication dates are the source of truth for the recent-updates shelf.
+    /// Keep the window rolling so an app expires exactly seven days after its update.
+    private var recentlyUpdatedEntries: [AppsCatalogEntry] {
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        return entries
+            .filter { entry in
+                guard let updatedAt = entry.app.currentDate?.date else { return false }
+                return updatedAt >= cutoff && updatedAt <= Date()
+            }
+            .sorted {
+                ($0.app.currentDate?.date ?? .distantPast) > ($1.app.currentDate?.date ?? .distantPast)
+            }
+    }
 
     private static func fetchPrivateRepository(from url: URL) async -> SourceAppsView.SourceRepositoryContext? {
         await withCheckedContinuation { continuation in
@@ -775,6 +790,23 @@ struct AppsCatalogView: View {
                     }
                     .accessibilityLabel("سجل التحميلات")
 
+                    Button { isRecentUpdatesPresented = true } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .overlay(alignment: .topTrailing) {
+                                if !recentlyUpdatedEntries.isEmpty {
+                                    Text(recentlyUpdatedEntries.count > 99 ? "99+" : "\(recentlyUpdatedEntries.count)")
+                                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 4)
+                                        .frame(minWidth: 16, minHeight: 16)
+                                        .background(Color.red.gradient, in: Capsule())
+                                        .offset(x: 9, y: -8)
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                    }
+                    .accessibilityLabel("التحديثات الأخيرة، \(recentlyUpdatedEntries.count) تطبيق")
+
                 }
             }
             .sheet(isPresented: $isHistoryPresented) {
@@ -782,6 +814,14 @@ struct AppsCatalogView: View {
             }
             .sheet(isPresented: $isDownloadsPresented) {
                 AppsCatalogDownloadsView()
+            }
+            .sheet(isPresented: $isRecentUpdatesPresented) {
+                AppsCatalogRecentUpdatesView(entries: recentlyUpdatedEntries) { entry in
+                    selectedRoute = SourceAppsView.SourceAppRoute(
+                        sourceURL: entry.sourceURL, source: entry.source, app: entry.app
+                    )
+                    isRecentUpdatesPresented = false
+                }
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
@@ -846,6 +886,64 @@ struct AppsCatalogView: View {
         category == .all ? entries.count : categoryCounts[category, default: 0]
     }
 
+}
+
+private struct AppsCatalogRecentUpdatesView: View {
+    let entries: [AppsCatalogEntry]
+    let open: (AppsCatalogEntry) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if entries.isEmpty {
+                    ContentUnavailableView(
+                        "لا توجد تحديثات حديثة",
+                        systemImage: "checkmark.seal",
+                        description: Text("ستظهر هنا التطبيقات التي نُشرت تحديثاتها خلال آخر 7 أيام.")
+                    )
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            ForEach(entries) { entry in
+                                VStack(alignment: .leading, spacing: 7) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "clock")
+                                            .font(.caption2)
+                                        if let date = entry.app.currentDate?.date {
+                                            Text("تم التحديث \(date.formatted(date: .abbreviated, time: .omitted))")
+                                                .font(.caption.weight(.medium))
+                                        } else {
+                                            Text("تحديث حديث")
+                                                .font(.caption.weight(.medium))
+                                        }
+                                        Spacer()
+                                        Text(entry.app.currentVersion.map { "v\($0)" } ?? "")
+                                            .font(.caption2.monospaced())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .foregroundStyle(.secondary)
+                                    AppsCatalogPremiumCard(entry: entry) {
+                                        open(entry)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(14)
+                    }
+                }
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("التحديثات الأخيرة")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("تم") { dismiss() }
+                }
+            }
+        }
+    }
 }
 
 private struct AppsCatalogPremiumCard: View {
