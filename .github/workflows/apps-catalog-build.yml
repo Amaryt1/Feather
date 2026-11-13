@@ -7,7 +7,8 @@ on:
       - "Feather/Views/Apps/**"
       - "Feather/Backend/AppsCatalog/**"
       - "Feather/Backend/Observable/DownloadManager.swift"
-      - "Feather/Resources/AppsCatalogSeed.json.gz"
+      - "Feather/Resources/PrivateAppsCatalogSeed.json.gz",
+      "Feather/Resources/PrivateAppsCatalogSeedManifest.json"
       - "AltSourceKit/**"
       - "Feather.xcodeproj/**"
       - ".github/workflows/apps-catalog-build.yml"
@@ -19,7 +20,8 @@ on:
       - "Feather/Views/Apps/**"
       - "Feather/Backend/AppsCatalog/**"
       - "Feather/Backend/Observable/DownloadManager.swift"
-      - "Feather/Resources/AppsCatalogSeed.json.gz"
+      - "Feather/Resources/PrivateAppsCatalogSeed.json.gz",
+      "Feather/Resources/PrivateAppsCatalogSeedManifest.json"
       - "AltSourceKit/**"
       - "Feather.xcodeproj/**"
       - ".github/workflows/apps-catalog-build.yml"
@@ -62,7 +64,30 @@ jobs:
           assert all(url.startswith("https://") for _, url in module.FEEDS)
           assert module.CATALOG_OUTPUT.as_posix().startswith("catalogs/private-apps/")
           assert not module.CATALOG_OUTPUT.as_posix().startswith("Feather/Resources/")
-          print("Four unique feeds and external catalog output verified.")
+          assert module.BUNDLED_CATALOG_OUTPUT.as_posix() == "Feather/Resources/PrivateAppsCatalogSeed.json.gz"
+          assert module.BUNDLED_MANIFEST_OUTPUT.as_posix() == "Feather/Resources/PrivateAppsCatalogSeedManifest.json"
+
+          # Validate the exact resources that will be packaged into the IPA.
+          import gzip
+          import hashlib
+          import json
+
+          bundled_catalog = module.BUNDLED_CATALOG_OUTPUT.read_bytes()
+          bundled_manifest = json.loads(module.BUNDLED_MANIFEST_OUTPUT.read_text(encoding="utf-8"))
+          digest = hashlib.sha256(bundled_catalog).hexdigest()
+          assert bundled_manifest["schemaVersion"] == 1
+          assert bundled_manifest["sourceCount"] == 4
+          assert bundled_manifest["appCount"] > 0
+          assert bundled_manifest["compressedBytes"] == len(bundled_catalog)
+          assert bundled_manifest["sha256"] == digest
+
+          payload = json.loads(gzip.decompress(bundled_catalog).decode("utf-8"))
+          assert payload["schemaVersion"] == 1
+          assert {source["sourceURL"] for source in payload["sources"]} == {url for _, url in module.FEEDS}
+          assert len(payload["sources"]) == 4
+          assert sum(len(source["repository"]["apps"]) for source in payload["sources"]) == bundled_manifest["appCount"]
+          assert bundled_catalog == module.CATALOG_OUTPUT.read_bytes()
+          print("Four feeds, bundled resources, app counts, and SHA-256 verified.")
           PY
 
       - name: Build and validate a live four-feed snapshot
