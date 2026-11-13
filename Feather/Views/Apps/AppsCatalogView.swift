@@ -150,70 +150,7 @@ private struct AppsCatalogIndex: Sendable {
     }
 }
 
-private enum AppsCatalogBundledSeed {
-    private struct Payload: Decodable {
-        struct Source: Decodable {
-            let sourceURL: String
-            let repository: ASRepository
-        }
-        let sources: [Source]
-    }
 
-    static func load() async -> AppsCatalogIndex {
-        await Task.detached(priority: .userInitiated) {
-            let repositories = decode()
-            return AppsCatalogIndex.build(from: repositories)
-        }.value
-    }
-
-    private static func decode() -> [SourceAppsView.SourceRepositoryContext] {
-        guard
-            let fileURL = Bundle.main.url(forResource: "AppsCatalogSeed.json", withExtension: "gz"),
-            let compressedData = try? Data(contentsOf: fileURL),
-            let data = try? GzipArchive.unarchive(archive: compressedData)
-        else { return [] }
-
-        // Decode the bundled JSON directly. Avoid constructing and serializing
-        // a huge [String: Any] graph before decoding each repository again.
-        if let payload = try? JSONDecoder().decode(Payload.self, from: data) {
-            return payload.sources.compactMap { item in
-                guard let url = URL(string: item.sourceURL) else { return nil }
-                return .init(sourceURL: url, repository: item.repository)
-            }
-        }
-
-        // Keep a tolerant fallback for repositories containing an unusual app.
-        guard
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let items = root["sources"] as? [[String: Any]]
-        else { return [] }
-
-        var contexts: [SourceAppsView.SourceRepositoryContext] = []
-        for item in items {
-            guard
-                let sourceString = item["sourceURL"] as? String,
-                let sourceURL = URL(string: sourceString),
-                let object = item["repository"] as? [String: Any],
-                let repositoryData = try? JSONSerialization.data(withJSONObject: object)
-            else { continue }
-            if let repository = try? JSONDecoder().decode(ASRepository.self, from: repositoryData) {
-                contexts.append(.init(sourceURL: sourceURL, repository: repository))
-                continue
-            }
-            guard let apps = object["apps"] as? [[String: Any]] else { continue }
-            var metadata = object
-            metadata.removeValue(forKey: "apps")
-            for app in apps {
-                var single = metadata
-                single["apps"] = [app]
-                guard let data = try? JSONSerialization.data(withJSONObject: single),
-                      let repository = try? JSONDecoder().decode(ASRepository.self, from: data) else { continue }
-                contexts.append(.init(sourceURL: sourceURL, repository: repository))
-            }
-        }
-        return contexts
-    }
-}
 struct AppsCatalogView: View {
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
     @State private var selectedCategory: AppsCatalogCategory = .all
@@ -370,18 +307,10 @@ struct AppsCatalogView: View {
         }
         .task {
             guard !hasLoaded else { return }
-
-            // Keep the loading state visible while the bundled snapshot is decoded.
-            // The complete bundled catalog is the first screen; do not immediately
-            // replace it with a slow, incremental network stream on every entry.
-            let bundledIndex = await AppsCatalogBundledSeed.load()
-            if !bundledIndex.entries.isEmpty {
-                apply(bundledIndex)
-                hasLoaded = true
-                isLoading = false
-                return
-            }
-
+            repositories = []
+            catalogEntries = []
+            entriesByCategory = [:]
+            categoryCounts = [:]
             hasLoaded = true
             isLoading = false
         }
