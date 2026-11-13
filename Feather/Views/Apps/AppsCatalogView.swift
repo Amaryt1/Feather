@@ -527,14 +527,21 @@ private enum AppsCatalogSort: String, CaseIterable {
     }
 }
 
-private struct AppsCatalogEntry: Identifiable, Sendable {
+private struct AppsCatalogEntry: Identifiable, Codable, Sendable {
     let sourceURL: URL?
-    let source: ASRepository
-    let app: ASRepository.App
+    let sourceIndex: Int
+    let appIndex: Int
+    let name: String
+    let description: String?
+    let developer: String?
+    let version: String?
+    let updatedAt: Date?
+    let size: Int64?
+    let iconURL: URL?
+    let downloadURL: URL
+    let uniqueID: String
     let category: AppsCatalogCategory
-    var id: String {
-        "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)|\(app.currentName)|\(app.currentVersion ?? "")|\(app.currentDownloadUrl?.absoluteString ?? "")"
-    }
+    var id: String { "\(sourceURL?.absoluteString ?? "")|\(uniqueID)|\(name)|\(version ?? "")|\(downloadURL.absoluteString)" }
 }
 
 private struct AppsCatalogIndex: Codable, Sendable {
@@ -542,110 +549,57 @@ private struct AppsCatalogIndex: Codable, Sendable {
     let entries: [AppsCatalogEntry]
     let entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]]
     let categoryCounts: [AppsCatalogCategory: Int]
+    private enum CodingKeys: String, CodingKey { case entries }
 
-    private struct EntryReference: Codable {
-        let sourceIndex: Int
-        let appIndex: Int
-        let category: AppsCatalogCategory
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case repositories, entryReferences
-    }
-
-    init(
-        repositories: [SourceAppsView.SourceRepositoryContext],
-        entries: [AppsCatalogEntry],
-        entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]],
-        categoryCounts: [AppsCatalogCategory: Int]
-    ) {
+    init(repositories: [SourceAppsView.SourceRepositoryContext], entries: [AppsCatalogEntry]) {
         self.repositories = repositories
         self.entries = entries
-        self.entriesByCategory = entriesByCategory
-        self.categoryCounts = categoryCounts
+        var buckets: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
+        var counts: [AppsCatalogCategory: Int] = [:]
+        for entry in entries {
+            buckets[entry.category, default: []].append(entry)
+            counts[entry.category, default: 0] += 1
+        }
+        entriesByCategory = buckets
+        categoryCounts = counts
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        repositories = try container.decode([SourceAppsView.SourceRepositoryContext].self, forKey: .repositories)
-        let references = try container.decode([EntryReference].self, forKey: .entryReferences)
-        var restored: [AppsCatalogEntry] = []
-        restored.reserveCapacity(references.count)
+        let decodedEntries = try container.decode([AppsCatalogEntry].self, forKey: .entries)
+        repositories = []
+        entries = decodedEntries
         var buckets: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
         var counts: [AppsCatalogCategory: Int] = [:]
-        for reference in references {
-            guard repositories.indices.contains(reference.sourceIndex) else { continue }
-            let context = repositories[reference.sourceIndex]
-            guard context.repository.apps.indices.contains(reference.appIndex) else { continue }
-            let entry = AppsCatalogEntry(
-                sourceURL: context.sourceURL,
-                source: context.repository,
-                app: context.repository.apps[reference.appIndex],
-                category: reference.category
-            )
-            restored.append(entry)
-            buckets[reference.category, default: []].append(entry)
-            counts[reference.category, default: 0] += 1
+        for entry in decodedEntries {
+            buckets[entry.category, default: []].append(entry)
+            counts[entry.category, default: 0] += 1
         }
-        entries = restored
         entriesByCategory = buckets
         categoryCounts = counts
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(repositories, forKey: .repositories)
-
-        var sourceIndices: [String: Int] = [:]
-        var appIndices: [[String: Int]] = []
-        for (sourceIndex, context) in repositories.enumerated() {
-            if let url = context.sourceURL {
-                sourceIndices[url.absoluteString] = sourceIndex
-            }
-            var indices: [String: Int] = [:]
-            for (appIndex, app) in context.repository.apps.enumerated() {
-                indices[Self.cacheIdentity(sourceURL: context.sourceURL, app: app)] = appIndex
-            }
-            appIndices.append(indices)
-        }
-
-        var references: [EntryReference] = []
-        references.reserveCapacity(entries.count)
-        for entry in entries {
-            guard let sourceURL = entry.sourceURL?.absoluteString,
-                  let sourceIndex = sourceIndices[sourceURL],
-                  let appIndex = appIndices[sourceIndex][Self.cacheIdentity(sourceURL: entry.sourceURL, app: entry.app)] else { continue }
-            references.append(EntryReference(
-                sourceIndex: sourceIndex,
-                appIndex: appIndex,
-                category: entry.category
-            ))
-        }
-        try container.encode(references, forKey: .entryReferences)
+        try container.encode(entries, forKey: .entries)
     }
 
     private static func cacheIdentity(sourceURL: URL?, app: ASRepository.App) -> String {
         "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)|\(app.currentName)|\(app.currentVersion ?? "")|\(app.currentDownloadUrl?.absoluteString ?? "")"
     }
 
-    static func build(
-        from repositories: [SourceAppsView.SourceRepositoryContext],
-        cachedCategories: [String: String] = [:]
-    ) -> AppsCatalogIndex {
+    static func build(from repositories: [SourceAppsView.SourceRepositoryContext], cachedCategories: [String: String] = [:]) -> AppsCatalogIndex {
         var seen = Set<String>()
         var entries: [AppsCatalogEntry] = []
         entries.reserveCapacity(repositories.reduce(0) { $0 + $1.repository.apps.count })
-        for context in repositories {
-            for app in context.repository.apps {
+        for (sourceIndex, context) in repositories.enumerated() {
+            for (appIndex, app) in context.repository.apps.enumerated() {
                 let displayName = app.currentName.trimmingCharacters(in: .whitespacesAndNewlines)
                 let normalizedName = displayName.lowercased()
-                guard !displayName.isEmpty,
-                      !["name", "unknown", "app"].contains(normalizedName),
+                guard !displayName.isEmpty, !["name", "unknown", "app"].contains(normalizedName),
                       let downloadURL = app.currentDownloadUrl,
-                      let scheme = downloadURL.scheme?.lowercased(),
-                      ["http", "https"].contains(scheme),
+                      let scheme = downloadURL.scheme?.lowercased(), ["http", "https"].contains(scheme),
                       downloadURL.host != nil else { continue }
-
                 let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 let developer = (app.developer ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                 let version = (app.currentVersion ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -654,22 +608,20 @@ private struct AppsCatalogIndex: Codable, Sendable {
                     ? "name|\(normalizedName)|developer|\(developer)|version|\(version)|url|\(downloadIdentity)"
                     : "bundle|\(bundle)|name|\(normalizedName)|version|\(version)|url|\(downloadIdentity)"
                 guard seen.insert(identity).inserted else { continue }
-
                 let category = cachedCategories[cacheIdentity(sourceURL: context.sourceURL, app: app)]
                     .flatMap(AppsCatalogCategory.init(rawValue:)) ?? AppsCatalogCategory.classify(app)
-                entries.append(.init(sourceURL: context.sourceURL, source: context.repository,
-                                     app: app, category: category))
+                entries.append(AppsCatalogEntry(
+                    sourceURL: context.sourceURL, sourceIndex: sourceIndex, appIndex: appIndex,
+                    name: app.currentName, description: app.currentDescription, developer: app.developer,
+                    version: app.currentVersion, updatedAt: app.currentDate?.date,
+                    size: app.currentAppVersion?.size.map { Int64($0) } ?? app.size,
+                    iconURL: app.iconURL, downloadURL: downloadURL, uniqueID: app.currentUniqueId,
+                    category: category
+                ))
             }
         }
-        entries.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
-        var buckets: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
-        var counts: [AppsCatalogCategory: Int] = [:]
-        for entry in entries {
-            buckets[entry.category, default: []].append(entry)
-            counts[entry.category, default: 0] += 1
-        }
-        return .init(repositories: repositories, entries: entries,
-                     entriesByCategory: buckets, categoryCounts: counts)
+        entries.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return AppsCatalogIndex(repositories: repositories, entries: entries)
     }
 }
 
@@ -755,7 +707,7 @@ struct AppsCatalogView: View {
         return await Task.detached(priority: .userInitiated) {
             guard let data = try? Data(contentsOf: url),
                   let cache = try? JSONDecoder().decode(PrivateAppsCatalogIndexCache.self, from: data),
-                  cache.schemaVersion == 2, cache.sha256 == sha256,
+                  cache.schemaVersion == 3, cache.sha256 == sha256,
                   let index = cache.index, !index.entries.isEmpty else { return nil }
             return index
         }.value
@@ -764,7 +716,7 @@ struct AppsCatalogView: View {
     private static func saveCatalogIndex(_ index: AppsCatalogIndex, sha256: String?) async {
         guard let sha256, let url = cachedIndexURL else { return }
         await Task.detached(priority: .utility) {
-            let cache = PrivateAppsCatalogIndexCache(schemaVersion: 2, sha256: sha256, index: index)
+            let cache = PrivateAppsCatalogIndexCache(schemaVersion: 3, sha256: sha256, index: index)
             guard let data = try? JSONEncoder().encode(cache) else { return }
             try? data.write(to: url, options: .atomic)
         }.value
@@ -1018,11 +970,11 @@ struct AppsCatalogView: View {
         let cutoff = now.addingTimeInterval(-7 * 24 * 60 * 60)
         return entries
             .filter { entry in
-                guard let updatedAt = entry.app.currentDate?.date else { return false }
+                guard let updatedAt = entry.updatedAt else { return false }
                 return updatedAt >= cutoff && updatedAt <= now
             }
             .sorted {
-                ($0.app.currentDate?.date ?? .distantPast) > ($1.app.currentDate?.date ?? .distantPast)
+                ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast)
             }
     }
 
@@ -1143,6 +1095,34 @@ struct AppsCatalogView: View {
     }
 
     @MainActor
+    private func openEntry(_ entry: AppsCatalogEntry) async {
+        var contexts = repositories
+        if contexts.isEmpty {
+            let expectedSHA = AppsCatalogMemoryCache.shared.snapshot()?.sha256
+            if let cached = await Self.loadCachedPrivateCatalog(), expectedSHA == nil || cached.sha256 == expectedSHA {
+                contexts = cached.contexts
+            } else if let bundled = await Self.loadBundledPrivateCatalog(), expectedSHA == nil || bundled.sha256 == expectedSHA {
+                contexts = bundled.contexts
+            } else if let refreshed = await Self.fetchPrebuiltPrivateCatalog() {
+                contexts = refreshed.contexts
+            }
+            guard !contexts.isEmpty else { return }
+            repositories = contexts
+            let hydrated = AppsCatalogIndex(repositories: contexts, entries: catalogEntries)
+            AppsCatalogMemoryCache.shared.store(hydrated, sha256: expectedSHA)
+        }
+
+        guard contexts.indices.contains(entry.sourceIndex) else { return }
+        let context = contexts[entry.sourceIndex]
+        guard context.repository.apps.indices.contains(entry.appIndex) else { return }
+        selectedRoute = SourceAppsView.SourceAppRoute(
+            sourceURL: context.sourceURL,
+            source: context.repository,
+            app: context.repository.apps[entry.appIndex]
+        )
+    }
+
+    @MainActor
     private func applyRepositories(
         _ contexts: [SourceAppsView.SourceRepositoryContext],
         sha256: String?
@@ -1210,9 +1190,9 @@ struct AppsCatalogView: View {
 
         if !searchText.isEmpty {
             result = result.filter { entry in
-                entry.app.currentName.localizedCaseInsensitiveContains(searchText)
-                    || (entry.app.currentDescription?.localizedCaseInsensitiveContains(searchText) ?? false)
-                    || (entry.app.developer?.localizedCaseInsensitiveContains(searchText) ?? false)
+                entry.name.localizedCaseInsensitiveContains(searchText)
+                    || (entry.description?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || (entry.developer?.localizedCaseInsensitiveContains(searchText) ?? false)
             }
         }
 
@@ -1220,11 +1200,11 @@ struct AppsCatalogView: View {
         case .recommended:
             break
         case .name:
-            result.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
+            result.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         case .newest:
-            result.sort { ($0.app.currentDate?.date ?? .distantPast) > ($1.app.currentDate?.date ?? .distantPast) }
+            result.sort { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
         case .largest:
-            result.sort { ($0.app.size ?? 0) > ($1.app.size ?? 0) }
+            result.sort { ($0.size ?? 0) > ($1.app.size ?? 0) }
         }
         return result
     }
@@ -1235,7 +1215,7 @@ struct AppsCatalogView: View {
                 categoryPicker
                 catalogControls
 
-                if isLoading && repositories.isEmpty {
+                if isLoading && catalogEntries.isEmpty {
                     Spacer()
                     ProgressView("جارٍ تحميل التطبيقات…")
                     Spacer()
@@ -1266,9 +1246,7 @@ struct AppsCatalogView: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 158), spacing: 12)], spacing: 14) {
                             ForEach(filteredEntries) { entry in
                                 AppsCatalogPremiumCard(entry: entry) {
-                                    selectedRoute = SourceAppsView.SourceAppRoute(
-                                        sourceURL: entry.sourceURL, source: entry.source, app: entry.app
-                                    )
+                                    Task { await openEntry(entry) }
                                 }
                             }
                         }
@@ -1322,10 +1300,7 @@ struct AppsCatalogView: View {
             }
             .sheet(isPresented: $isRecentUpdatesPresented) {
                 AppsCatalogRecentUpdatesView(entries: recentlyUpdatedEntries) { entry in
-                    selectedRoute = SourceAppsView.SourceAppRoute(
-                        sourceURL: entry.sourceURL, source: entry.source, app: entry.app
-                    )
-                    isRecentUpdatesPresented = false
+                    Task { await openEntry(entry); isRecentUpdatesPresented = false }
                 }
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
@@ -1424,7 +1399,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                                     HStack(spacing: 6) {
                                         Image(systemName: "clock")
                                             .font(.caption2)
-                                        if let date = entry.app.currentDate?.date {
+                                        if let date = entry.updatedAt {
                                             Text("تم التحديث \(date.formatted(date: .abbreviated, time: .omitted))")
                                                 .font(.caption.weight(.medium))
                                         } else {
@@ -1432,7 +1407,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                                                 .font(.caption.weight(.medium))
                                         }
                                         Spacer()
-                                        Text(entry.app.currentVersion.map { "v\($0)" } ?? "")
+                                        Text(entry.version.map { "v\($0)" } ?? "")
                                             .font(.caption2.monospaced())
                                             .foregroundStyle(.secondary)
                                     }
@@ -1482,7 +1457,7 @@ private struct AppsCatalogPremiumCard: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                        LazyImage(url: entry.app.iconURL) { state in
+                        LazyImage(url: entry.iconURL) { state in
                             if let image = state.image {
                                 image.resizable().aspectRatio(contentMode: .fill)
                             } else {
@@ -1505,11 +1480,11 @@ private struct AppsCatalogPremiumCard: View {
                     .frame(height: 126)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(entry.app.currentName)
+                        Text(entry.name)
                             .font(.headline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        Text(entry.app.currentDescription ?? "تطبيق")
+                        Text(entry.description ?? "تطبيق")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -1530,12 +1505,12 @@ private struct AppsCatalogPremiumCard: View {
                 Image(systemName: "sparkles")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text(entry.app.currentVersion.map { "v\($0)" } ?? "Feather Store")
+                Text(entry.version.map { "v\($0)" } ?? "Feather Store")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 2)
-                DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+                DownloadButtonView(downloadURL: entry.downloadURL, downloadID: entry.uniqueID)
                     .scaleEffect(0.92)
             }
         }
