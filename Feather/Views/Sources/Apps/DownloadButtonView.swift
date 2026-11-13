@@ -25,7 +25,7 @@ struct DownloadButtonView: View {
 				ZStack {
 					Circle()
 						.trim(from: 0, to: downloadProgress)
-						.stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.3, lineCap: .round))
+						.stroke(AngularGradient(colors: [.cyan, Color.accentColor, .purple, .cyan], center: .center), style: StrokeStyle(lineWidth: 2.8, lineCap: .round))
 						.rotationEffect(.degrees(-90))
 						.frame(width: 31, height: 31)
 						.animation(.smooth, value: downloadProgress)
@@ -56,8 +56,7 @@ struct DownloadButtonView: View {
 						.foregroundStyle(Color.accentColor)
 						.padding(.horizontal, 24)
 						.padding(.vertical, 6)
-						.background(Color(uiColor: .quaternarySystemFill))
-						.clipShape(Capsule())
+						.modifier(DownloadActionSurface())
 				}
 				.buttonStyle(.borderless)
 				.compatTransition()
@@ -92,5 +91,18 @@ struct DownloadButtonView: View {
 	private func _sourceProvenance() -> SourceAppProvenance? {
 		guard let source else { return nil }
 		return SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
+	}
+}
+
+
+private struct DownloadActionSurface: ViewModifier {
+	func body(content: Content) -> some View {
+		if #available(iOS 26.0, *) {
+			content.glassEffect(.regular, in: Capsule())
+		} else {
+			content
+				.background(.ultraThinMaterial, in: Capsule())
+				.overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+		}
 	}
 }
