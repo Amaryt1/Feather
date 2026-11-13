@@ -7,8 +7,8 @@ on:
       - "Feather/Views/Apps/**"
       - "Feather/Backend/AppsCatalog/**"
       - "Feather/Backend/Observable/DownloadManager.swift"
-      - "Feather/Resources/PrivateAppsCatalogSeed.json.gz",
-      "Feather/Resources/PrivateAppsCatalogSeedManifest.json"
+      - "Feather/Resources/PrivateAppsCatalogSeed.json.gz"
+      - "Feather/Resources/PrivateAppsCatalogSeedManifest.json"
       - "AltSourceKit/**"
       - "Feather.xcodeproj/**"
       - ".github/workflows/apps-catalog-build.yml"
@@ -20,8 +20,8 @@ on:
       - "Feather/Views/Apps/**"
       - "Feather/Backend/AppsCatalog/**"
       - "Feather/Backend/Observable/DownloadManager.swift"
-      - "Feather/Resources/PrivateAppsCatalogSeed.json.gz",
-      "Feather/Resources/PrivateAppsCatalogSeedManifest.json"
+      - "Feather/Resources/PrivateAppsCatalogSeed.json.gz"
+      - "Feather/Resources/PrivateAppsCatalogSeedManifest.json"
       - "AltSourceKit/**"
       - "Feather.xcodeproj/**"
       - ".github/workflows/apps-catalog-build.yml"
