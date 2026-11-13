@@ -754,8 +754,9 @@ struct AppsCatalogView: View {
 
         do {
             var catalogComponents = URLComponents(url: manifest.catalogURL, resolvingAgainstBaseURL: false)
-            catalogComponents?.queryItems = (catalogComponents?.queryItems ?? [])
-                + [URLQueryItem(name: "v", value: manifest.sha256)]
+            var catalogQueryItems = catalogComponents?.queryItems ?? []
+            catalogQueryItems.append(URLQueryItem(name: "v", value: manifest.sha256))
+            catalogComponents?.queryItems = catalogQueryItems
             let downloadURL = catalogComponents?.url ?? manifest.catalogURL
             var request = URLRequest(url: downloadURL, timeoutInterval: 180)
             request.cachePolicy = .reloadIgnoringLocalCacheData
