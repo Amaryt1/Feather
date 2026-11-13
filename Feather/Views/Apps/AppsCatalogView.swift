@@ -543,7 +543,14 @@ private struct AppsCatalogIndex: Sendable {
     let entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]]
     let categoryCounts: [AppsCatalogCategory: Int]
 
-    static func build(from repositories: [SourceAppsView.SourceRepositoryContext]) -> AppsCatalogIndex {
+    private static func cacheIdentity(sourceURL: URL?, app: ASRepository.App) -> String {
+        "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)|\(app.currentName)|\(app.currentVersion ?? "")|\(app.currentDownloadUrl?.absoluteString ?? "")"
+    }
+
+    static func build(
+        from repositories: [SourceAppsView.SourceRepositoryContext],
+        cachedCategories: [String: String] = [:]
+    ) -> AppsCatalogIndex {
         var seen = Set<String>()
         var entries: [AppsCatalogEntry] = []
         entries.reserveCapacity(repositories.reduce(0) { $0 + $1.repository.apps.count })
@@ -569,8 +576,10 @@ private struct AppsCatalogIndex: Sendable {
                     : "bundle|\(bundle)|name|\(normalizedName)|version|\(version)|url|\(downloadIdentity)"
                 guard seen.insert(identity).inserted else { continue }
 
+                let category = cachedCategories[cacheIdentity(sourceURL: context.sourceURL, app: app)]
+                    .flatMap(AppsCatalogCategory.init(rawValue:)) ?? AppsCatalogCategory.classify(app)
                 entries.append(.init(sourceURL: context.sourceURL, source: context.repository,
-                                     app: app, category: AppsCatalogCategory.classify(app)))
+                                     app: app, category: category))
             }
         }
         entries.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
@@ -607,6 +616,29 @@ private struct PrivateAppsCatalogPayload: Decodable {
     let sources: [PrivateAppsCatalogSource]
 }
 
+private struct PrivateAppsCatalogIndexCache: Codable {
+    let schemaVersion: Int
+    let sha256: String
+    let categories: [String: String]
+}
+
+private actor AppsCatalogMemoryCache {
+    static let shared = AppsCatalogMemoryCache()
+
+    private var sha256: String?
+    private var index: AppsCatalogIndex?
+
+    func snapshot() -> (sha256: String?, index: AppsCatalogIndex)? {
+        guard let index else { return nil }
+        return (sha256, index)
+    }
+
+    func store(_ index: AppsCatalogIndex, sha256: String?) {
+        self.index = index
+        self.sha256 = sha256
+    }
+}
+
 
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
@@ -632,6 +664,32 @@ struct AppsCatalogView: View {
 
     private static var cachedManifestURL: URL? {
         privateCatalogCacheDirectory?.appendingPathComponent("manifest.json")
+    }
+
+    private static var cachedIndexURL: URL? {
+        privateCatalogCacheDirectory?.appendingPathComponent("catalog-index.json")
+    }
+
+    private static func readCachedCategoryMap(sha256: String?) -> [String: String] {
+        guard let sha256, let url = cachedIndexURL,
+              let data = try? Data(contentsOf: url),
+              let cache = try? JSONDecoder().decode(PrivateAppsCatalogIndexCache.self, from: data),
+              cache.schemaVersion == 1,
+              cache.sha256 == sha256 else { return [:] }
+        return cache.categories
+    }
+
+    private static func saveCategoryMap(_ categories: [String: String], sha256: String?) async {
+        guard let sha256, let url = cachedIndexURL else { return }
+        await Task.detached(priority: .utility) {
+            let cache = PrivateAppsCatalogIndexCache(
+                schemaVersion: 1,
+                sha256: sha256,
+                categories: categories
+            )
+            guard let data = try? JSONEncoder().encode(cache) else { return }
+            try? data.write(to: url, options: .atomic)
+        }.value
     }
 
     private static func readCachedManifest() -> PrivateAppsCatalogManifest? {
@@ -706,9 +764,12 @@ struct AppsCatalogView: View {
         }.value
     }
 
-    private static func loadCachedPrivateCatalog() async -> [SourceAppsView.SourceRepositoryContext]? {
-        guard let (manifest, data) = await readCachedCatalogFiles() else { return nil }
-        return await catalogContexts(from: data, expectedSHA256: manifest.sha256)
+    private static func loadCachedPrivateCatalog() async -> (sha256: String, contexts: [SourceAppsView.SourceRepositoryContext])? {
+        guard let (manifest, data) = await readCachedCatalogFiles(),
+              let contexts = await catalogContexts(from: data, expectedSHA256: manifest.sha256) else {
+            return nil
+        }
+        return (manifest.sha256, contexts)
     }
 
     private static func fetchPrivateCatalogManifest() async -> PrivateAppsCatalogManifest? {
@@ -740,8 +801,16 @@ struct AppsCatalogView: View {
         }
     }
 
-    private static func fetchPrebuiltPrivateCatalog() async -> [SourceAppsView.SourceRepositoryContext]? {
-        guard let manifest = await fetchPrivateCatalogManifest() else { return nil }
+    private static func fetchPrebuiltPrivateCatalog(
+        manifest suppliedManifest: PrivateAppsCatalogManifest? = nil
+    ) async -> (sha256: String, contexts: [SourceAppsView.SourceRepositoryContext])? {
+        let manifest: PrivateAppsCatalogManifest
+        if let suppliedManifest {
+            manifest = suppliedManifest
+        } else {
+            guard let fetchedManifest = await fetchPrivateCatalogManifest() else { return nil }
+            manifest = fetchedManifest
+        }
 
         if let (cachedManifest, cachedData) = await readCachedCatalogFiles(),
            cachedManifest.sha256 == manifest.sha256,
@@ -749,7 +818,7 @@ struct AppsCatalogView: View {
                 from: cachedData,
                 expectedSHA256: manifest.sha256
            ) {
-            return cachedContexts
+            return (manifest.sha256, cachedContexts)
         }
 
         do {
@@ -771,7 +840,7 @@ struct AppsCatalogView: View {
                 return nil
             }
             await saveCatalog(data, manifest: manifest)
-            return contexts
+            return (manifest.sha256, contexts)
         } catch {
             return nil
         }
@@ -831,12 +900,20 @@ struct AppsCatalogView: View {
     private func loadPrivateFeeds(force: Bool = false) async {
         guard !hasLoaded || force else { return }
 
-        // A previously downloaded snapshot is decoded locally first. This makes
-        // every category available immediately on later launches, without waiting
-        // for any of the four live repositories.
-        if !force, !hasLoaded,
-           let cachedContexts = await Self.loadCachedPrivateCatalog() {
-            await applyRepositories(cachedContexts)
+        // Reuse the already-decoded and indexed catalog when this view is recreated.
+        // This is the fast path for every subsequent visit during the app session.
+        if !force, let cached = await AppsCatalogMemoryCache.shared.snapshot() {
+            apply(cached.index)
+            hasLoaded = true
+            isLoading = false
+            Task { await refreshPrivateCatalogInBackground() }
+            return
+        }
+
+        // On a cold app launch, decode the last valid disk snapshot once. The
+        // category map avoids repeating the expensive text classification pass.
+        if !force, let cached = await Self.loadCachedPrivateCatalog() {
+            await applyRepositories(cached.contexts, sha256: cached.sha256)
             hasLoaded = true
             isLoading = false
             Task { await refreshPrivateCatalogInBackground() }
@@ -845,10 +922,9 @@ struct AppsCatalogView: View {
 
         isLoading = repositories.isEmpty
 
-        // First install: fetch one prebuilt snapshot rather than four independent
-        // feeds. On refresh, the small manifest is checked before downloading data.
-        if let prebuiltContexts = await Self.fetchPrebuiltPrivateCatalog() {
-            await applyRepositories(prebuiltContexts)
+        // First install or an explicit refresh: prefer the generated snapshot.
+        if let prebuilt = await Self.fetchPrebuiltPrivateCatalog() {
+            await applyRepositories(prebuilt.contexts, sha256: prebuilt.sha256)
             hasLoaded = true
             isLoading = false
             return
@@ -881,23 +957,41 @@ struct AppsCatalogView: View {
                 .compactMap { $0.1 }
         }
 
-        await applyRepositories(loadedContexts)
+        await applyRepositories(loadedContexts, sha256: nil)
         hasLoaded = true
         isLoading = false
     }
 
     @MainActor
-    private func applyRepositories(_ contexts: [SourceAppsView.SourceRepositoryContext]) async {
+    private func applyRepositories(
+        _ contexts: [SourceAppsView.SourceRepositoryContext],
+        sha256: String?
+    ) async {
+        let cachedCategories = Self.readCachedCategoryMap(sha256: sha256)
         let index = await Task.detached(priority: .userInitiated) {
-            AppsCatalogIndex.build(from: contexts)
+            AppsCatalogIndex.build(from: contexts, cachedCategories: cachedCategories)
         }.value
+        await AppsCatalogMemoryCache.shared.store(index, sha256: sha256)
+        if let sha256 {
+            let categories = Dictionary(uniqueKeysWithValues: index.entries.map { ($0.id, $0.category.rawValue) })
+            await Self.saveCategoryMap(categories, sha256: sha256)
+        }
         apply(index)
     }
 
     @MainActor
     private func refreshPrivateCatalogInBackground() async {
-        guard let refreshedContexts = await Self.fetchPrebuiltPrivateCatalog() else { return }
-        await applyRepositories(refreshedContexts)
+        guard let manifest = await Self.fetchPrivateCatalogManifest() else { return }
+
+        // An unchanged manifest means the current in-memory index is already valid.
+        // Do not decompress, decode, classify, sort, or rebuild the same catalog.
+        if let cached = await AppsCatalogMemoryCache.shared.snapshot(),
+           cached.sha256 == manifest.sha256 {
+            return
+        }
+
+        guard let refreshed = await Self.fetchPrebuiltPrivateCatalog(manifest: manifest) else { return }
+        await applyRepositories(refreshed.contexts, sha256: refreshed.sha256)
         hasLoaded = true
     }
 
