@@ -211,6 +211,7 @@ extension ASRepository {
 
 		public init(from decoder: any Decoder) throws {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
+			self.uuid = try container.decodeIfPresent(UUID.self, forKey: .uuid) ?? UUID()
 			self.id = try container.decodeIfPresent(String.self, forKey: .id)
 			self.name = try container.decodeIfPresent(String.self, forKey: .name)
 
@@ -344,6 +345,7 @@ extension ASRepository {
 		//		}
 
 		public enum CodingKeys: String, CodingKey {
+			case uuid
 			case id = "bundleIdentifier"
 			case name, subtitle, description
 			case developer = "developerName"
