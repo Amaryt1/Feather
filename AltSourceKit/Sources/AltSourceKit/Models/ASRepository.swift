@@ -211,7 +211,7 @@ extension ASRepository {
 
 		public init(from decoder: any Decoder) throws {
 			let container = try decoder.container(keyedBy: CodingKeys.self)
-			self.uuid = try container.decodeIfPresent(UUID.self, forKey: .uuid) ?? UUID()
+			self.uuid = try container.decodeIfPresent(UUID.self, forKey: .cacheUUID) ?? UUID()
 			self.id = try container.decodeIfPresent(String.self, forKey: .id)
 			self.name = try container.decodeIfPresent(String.self, forKey: .name)
 
@@ -725,7 +725,7 @@ extension ASRepository {
 extension ASRepository.App {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(uuid, forKey: .uuid)
+        try c.encode(uuid, forKey: .cacheUUID)
         try c.encodeIfPresent(id, forKey: .id)
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(subtitle, forKey: .subtitle)
