@@ -604,7 +604,7 @@ private struct AppsCatalogIndex: Codable, Sendable {
             }
             var indices: [String: Int] = [:]
             for (appIndex, app) in context.repository.apps.enumerated() {
-                indices[app.currentUniqueId] = appIndex
+                indices[Self.cacheIdentity(sourceURL: context.sourceURL, app: app)] = appIndex
             }
             appIndices.append(indices)
         }
@@ -614,7 +614,7 @@ private struct AppsCatalogIndex: Codable, Sendable {
         for entry in entries {
             guard let sourceURL = entry.sourceURL?.absoluteString,
                   let sourceIndex = sourceIndices[sourceURL],
-                  let appIndex = appIndices[sourceIndex][entry.app.currentUniqueId] else { continue }
+                  let appIndex = appIndices[sourceIndex][Self.cacheIdentity(sourceURL: entry.sourceURL, app: entry.app)] else { continue }
             references.append(EntryReference(
                 sourceIndex: sourceIndex,
                 appIndex: appIndex,
