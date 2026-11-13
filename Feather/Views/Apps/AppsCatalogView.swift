@@ -646,22 +646,34 @@ struct AppsCatalogView: View {
         return try? Data(contentsOf: url)
     }
 
-    private static func saveCatalog(_ data: Data, manifest: PrivateAppsCatalogManifest) {
-        guard let directory = privateCatalogCacheDirectory,
-              let catalogURL = cachedCatalogURL,
-              let manifestURL = cachedManifestURL else { return }
+    private static func readCachedCatalogFiles() async -> (PrivateAppsCatalogManifest, Data)? {
+        await Task.detached(priority: .utility) {
+            guard let manifest = readCachedManifest(),
+                  manifest.schemaVersion == 1,
+                  manifest.sourceCount == privateFeedURLs.count,
+                  let data = readCachedCatalogData() else { return nil }
+            return (manifest, data)
+        }.value
+    }
 
-        do {
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true
-            )
-            try data.write(to: catalogURL, options: .atomic)
-            let manifestData = try JSONEncoder().encode(manifest)
-            try manifestData.write(to: manifestURL, options: .atomic)
-        } catch {
-            // The in-memory catalog remains usable if the optional disk cache fails.
-        }
+    private static func saveCatalog(_ data: Data, manifest: PrivateAppsCatalogManifest) async {
+        await Task.detached(priority: .utility) {
+            guard let directory = privateCatalogCacheDirectory,
+                  let catalogURL = cachedCatalogURL,
+                  let manifestURL = cachedManifestURL else { return }
+
+            do {
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true
+                )
+                try data.write(to: catalogURL, options: .atomic)
+                let manifestData = try JSONEncoder().encode(manifest)
+                try manifestData.write(to: manifestURL, options: .atomic)
+            } catch {
+                // The in-memory catalog remains usable if the optional disk cache fails.
+            }
+        }.value
     }
 
     private static func catalogContexts(
@@ -696,10 +708,7 @@ struct AppsCatalogView: View {
     }
 
     private static func loadCachedPrivateCatalog() async -> [SourceAppsView.SourceRepositoryContext]? {
-        guard let manifest = readCachedManifest(),
-              manifest.schemaVersion == 1,
-              manifest.sourceCount == privateFeedURLs.count,
-              let data = readCachedCatalogData() else { return nil }
+        guard let (manifest, data) = await readCachedCatalogFiles() else { return nil }
         return await catalogContexts(from: data, expectedSHA256: manifest.sha256)
     }
 
@@ -734,9 +743,8 @@ struct AppsCatalogView: View {
     private static func fetchPrebuiltPrivateCatalog() async -> [SourceAppsView.SourceRepositoryContext]? {
         guard let manifest = await fetchPrivateCatalogManifest() else { return nil }
 
-        if let cachedManifest = readCachedManifest(),
+        if let (cachedManifest, cachedData) = await readCachedCatalogFiles(),
            cachedManifest.sha256 == manifest.sha256,
-           let cachedData = readCachedCatalogData(),
            let cachedContexts = await catalogContexts(
                 from: cachedData,
                 expectedSHA256: manifest.sha256
@@ -754,7 +762,7 @@ struct AppsCatalogView: View {
                   ) else {
                 return nil
             }
-            saveCatalog(data, manifest: manifest)
+            await saveCatalog(data, manifest: manifest)
             return contexts
         } catch {
             return nil
