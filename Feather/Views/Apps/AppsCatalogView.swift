@@ -126,10 +126,10 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             "gta", "grand theft auto", "bully", "minecraft", "roblox", "fortnite",
             "pubg", "playerunknown", "call of duty", "free fire", "among us",
             "8 ball pool", "8ball pool", "agar io", "car parking", "clash of clans",
-            "clash royale", "subway surfers", "brawl stars", "stardew valley",
+            "clash royale", "clash royal", "subway surfers", "sabway surfers", "brawl stars", "stardew valley",
             "pokemon", "genshin impact", "honkai", "mobile legends",
             "league of legends", "wild rift", "asphalt", "need for speed",
-            "efootball", "fifa", "ea sports fc", "dream league soccer",
+            "efootball", "fifa mobile", "fc mobile", "ea sports fc", "dream league soccer",
             "real racing", "monopoly", "angry birds", "fruit ninja", "temple run",
             "hill climb", "shadow fight", "geometry dash", "plants vs zombies",
             "mortal kombat", "tekken", "street fighter", "terraria", "dead cells",
@@ -137,7 +137,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             "ludo", "chess", "candy crush", "homescapes", "royal match",
             "arena of valor", "brawlhalla", "لعبة", "العاب"
         ]) || named(["game", "games", "gaming"]) || categorized([
-            "games", "game", "gaming", "arcade games", "puzzle games",
+            "games", "game", "gaming", "arcade", "arcade games", "puzzle games",
             "action games", "adventure games", "racing games", "strategy games"
         ]) {
             return .games
@@ -165,7 +165,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         // Well-known apps are classified by their actual purpose, not incidental
         // words in their marketing descriptions or developer names.
         if named([
-            "netflix", "youtube", "spotify", "twitch", "vlc", "soundcloud",
+            "netflix", "youtube", "spotify", "twitch", "vlc", "soundcloud", "org 24", "org 2024",
             "iptv", "crunchyroll", "disney plus", "prime video", "apple music",
             "apple tv", "plex", "kodi", "podcast", "video player", "movie player",
             "djay", "moviespirit"
@@ -174,7 +174,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         }
         if named([
             "capcut", "picsart", "canva", "alight motion", "video star",
-            "kinemaster", "lightroom", "photoshop", "procreate", "ibis paint",
+            "kinemaster", "imovie", "lightroom", "photoshop", "procreate", "ibis paint",
             "remini", "cute cut", "videoleap", "inshot", "affinity", "pixelmator"
         ]) {
             return .design
@@ -230,7 +230,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             return .travel
         }
         if named([
-            "health", "fitness", "workout", "gym", "medical", "doctor",
+            "health", "fitness", "workout", "gym", "medical", "doctor", "google fit", "apple health", "samsung health", "fitbod", "strong workout", "nike run club",
             "myfitnesspal", "fitbit", "nike training club", "apple fitness",
             "headspace", "sleep cycle", "calm", "medisafe", "ada health"
         ]) {
@@ -253,7 +253,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             "onefootball", "fotmob", "sofascore", "flashscore", "livescore",
             "365scores", "espn", "bein sports", "f1 tv", "formula 1",
             "nba", "nfl", "ufc", "cricbuzz", "wimbledon", "strava",
-            "sports", "sport", "football scores", "soccer", "basketball",
+            "sports", "sport", "fifa", "motogp", "premier league", "football scores", "soccer", "basketball",
             "tennis", "cricket", "rugby"
         ]) {
             return .sports
@@ -271,7 +271,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             return .customization
         }
         if named([
-            "calculator", "file manager", "scanner", "qr scanner", "speed test",
+            "calculator", "file manager", "scanner", "qr scanner", "speed test", "ispoofer", "ipogo",
             "weather", "auto clicker", "password manager", "compressor"
         ]) {
             return .utilities
@@ -309,6 +309,9 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         if categorized(["social", "social networking", "communication", "messaging"]) {
             return .social
         }
+        if categorized(["finance", "banking", "financial"]) {
+            return .finance
+        }
         if categorized(["productivity", "business", "office"]) {
             return .productivity
         }
@@ -329,9 +332,6 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         }
         if categorized(["education", "reference", "books"]) {
             return .education
-        }
-        if categorized(["finance", "banking", "financial"]) {
-            return .finance
         }
         if categorized(["shopping", "retail", "e commerce"]) {
             return .shopping
@@ -671,6 +671,7 @@ struct AppsCatalogView: View {
             }
         }
         .task {
+            _ = AppsCatalogPersonalization.shared
             await loadPrivateFeeds()
         }
     }
