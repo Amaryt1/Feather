@@ -1099,17 +1099,22 @@ struct AppsCatalogView: View {
         var contexts = repositories
         if contexts.isEmpty {
             let expectedSHA = AppsCatalogMemoryCache.shared.snapshot()?.sha256
+            var resolvedSHA = expectedSHA
             if let cached = await Self.loadCachedPrivateCatalog(), expectedSHA == nil || cached.sha256 == expectedSHA {
                 contexts = cached.contexts
+                resolvedSHA = cached.sha256
             } else if let bundled = await Self.loadBundledPrivateCatalog(), expectedSHA == nil || bundled.sha256 == expectedSHA {
                 contexts = bundled.contexts
-            } else if let refreshed = await Self.fetchPrebuiltPrivateCatalog() {
+                resolvedSHA = bundled.sha256
+            } else if let refreshed = await Self.fetchPrebuiltPrivateCatalog(),
+                      expectedSHA == nil || refreshed.sha256 == expectedSHA {
                 contexts = refreshed.contexts
+                resolvedSHA = refreshed.sha256
             }
             guard !contexts.isEmpty else { return }
             repositories = contexts
             let hydrated = AppsCatalogIndex(repositories: contexts, entries: catalogEntries)
-            AppsCatalogMemoryCache.shared.store(hydrated, sha256: expectedSHA)
+            AppsCatalogMemoryCache.shared.store(hydrated, sha256: resolvedSHA)
         }
 
         guard contexts.indices.contains(entry.sourceIndex) else { return }
@@ -1204,7 +1209,7 @@ struct AppsCatalogView: View {
         case .newest:
             result.sort { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
         case .largest:
-            result.sort { ($0.size ?? 0) > ($1.app.size ?? 0) }
+            result.sort { ($0.size ?? 0) > ($1.size ?? 0) }
         }
         return result
     }
