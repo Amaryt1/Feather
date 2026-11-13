@@ -1065,7 +1065,7 @@ struct AppsCatalogView: View {
         }
 
         // Restore the ready index before reading, hashing or decompressing the feed.
-        if let manifest = await Self.readCachedManifest() ?? Self.readBundledPrivateCatalogManifest(),
+        if let manifest = Self.readCachedManifest() ?? Self.readBundledPrivateCatalogManifest(),
            let cachedIndex = await Self.readCachedIndex(sha256: manifest.sha256) {
             AppsCatalogMemoryCache.shared.store(cachedIndex, sha256: manifest.sha256)
             apply(cachedIndex)
@@ -1164,7 +1164,7 @@ struct AppsCatalogView: View {
         // Persist the complete ready index after publishing it. Atomic replacement
         // preserves the last valid snapshot if a write is interrupted.
         if let sha256 {
-            Task { await Self.saveCatalogIndex(index, sha256: sha256) }
+            await Self.saveCatalogIndex(index, sha256: sha256)
         }
     }
 
