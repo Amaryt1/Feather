@@ -622,11 +622,12 @@ private struct PrivateAppsCatalogIndexCache: Codable {
     let categories: [String: String]
 }
 
-private actor AppsCatalogMemoryCache {
+@MainActor
+private final class AppsCatalogMemoryCache {
     static let shared = AppsCatalogMemoryCache()
 
-    private var sha256: String?
-    private var index: AppsCatalogIndex?
+    private(set) var sha256: String?
+    private(set) var index: AppsCatalogIndex?
 
     func snapshot() -> (sha256: String?, index: AppsCatalogIndex)? {
         guard let index else { return nil }
@@ -640,6 +641,7 @@ private actor AppsCatalogMemoryCache {
 }
 
 
+@MainActor
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
     private static let privateFeedURLs: [URL] = [
@@ -848,12 +850,12 @@ struct AppsCatalogView: View {
         }
     }
 
-    @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
+    @State private var repositories: [SourceAppsView.SourceRepositoryContext] = AppsCatalogMemoryCache.shared.index?.repositories ?? []
     @State private var selectedCategory: AppsCatalogCategory = .all
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
-    @State private var isLoading = true
-    @State private var hasLoaded = false
+    @State private var isLoading = AppsCatalogMemoryCache.shared.index == nil
+    @State private var hasLoaded = AppsCatalogMemoryCache.shared.index != nil
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isDownloadsPresented = false
     @State private var isRecentUpdatesPresented = false
@@ -861,10 +863,10 @@ struct AppsCatalogView: View {
     // Build the catalog index once when repositories change. Rebuilding this
     // 27k-app index from body-computed properties made every category redraw
     // repeatedly scan the entire catalog.
-    @State private var catalogEntries: [AppsCatalogEntry] = []
-    @State private var entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]] = [:]
-    @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
-    @State private var recentlyUpdatedEntries: [AppsCatalogEntry] = []
+    @State private var catalogEntries: [AppsCatalogEntry] = AppsCatalogMemoryCache.shared.index?.entries ?? []
+    @State private var entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]] = AppsCatalogMemoryCache.shared.index?.entriesByCategory ?? [:]
+    @State private var categoryCounts: [AppsCatalogCategory: Int] = AppsCatalogMemoryCache.shared.index?.categoryCounts ?? [:]
+    @State private var recentlyUpdatedEntries: [AppsCatalogEntry] = AppsCatalogMemoryCache.shared.index.map { Self.recentUpdates(in: $0.entries) } ?? []
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
 
@@ -904,7 +906,7 @@ struct AppsCatalogView: View {
 
         // Reuse the already-decoded and indexed catalog when this view is recreated.
         // This is the fast path for every subsequent visit during the app session.
-        if let cached = await AppsCatalogMemoryCache.shared.snapshot() {
+        if let cached = AppsCatalogMemoryCache.shared.snapshot() {
             apply(cached.index)
             hasLoaded = true
             isLoading = false
@@ -981,7 +983,7 @@ struct AppsCatalogView: View {
         let index = await Task.detached(priority: .userInitiated) {
             AppsCatalogIndex.build(from: contexts, cachedCategories: cachedCategories)
         }.value
-        await AppsCatalogMemoryCache.shared.store(index, sha256: sha256)
+        AppsCatalogMemoryCache.shared.store(index, sha256: sha256)
         if let sha256 {
             var categories: [String: String] = [:]
             for entry in index.entries {
@@ -998,7 +1000,7 @@ struct AppsCatalogView: View {
 
         // An unchanged manifest means the current in-memory index is already valid.
         // Do not decompress, decode, classify, sort, or rebuild the same catalog.
-        if let cached = await AppsCatalogMemoryCache.shared.snapshot(),
+        if let cached = AppsCatalogMemoryCache.shared.snapshot(),
            cached.sha256 == manifest.sha256 {
             return
         }
