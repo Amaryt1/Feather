@@ -898,11 +898,19 @@ private struct AppsCatalogRecentUpdatesView: View {
         NavigationStack {
             Group {
                 if entries.isEmpty {
-                    ContentUnavailableView(
-                        "لا توجد تحديثات حديثة",
-                        systemImage: "checkmark.seal",
-                        description: Text("ستظهر هنا التطبيقات التي نُشرت تحديثاتها خلال آخر 7 أيام.")
-                    )
+                    VStack(spacing: 10) {
+                        Image(systemName: "checkmark.seal")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.secondary)
+                        Text("لا توجد تحديثات حديثة")
+                            .font(.headline)
+                        Text("ستظهر هنا التطبيقات التي نُشرت تحديثاتها خلال آخر 7 أيام.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 14) {
