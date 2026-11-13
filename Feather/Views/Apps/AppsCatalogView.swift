@@ -139,7 +139,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             "ludo", "chess", "candy crush", "homescapes", "royal match",
             "arena of valor", "brawlhalla", "لعبة", "العاب"
         ]) || named(["game", "games", "gaming"]) || categorized([
-            "games", "game", "gaming", "arcade", "arcade games", "puzzle games",
+            "games", "game", "gaming", "arcade", "arcade games", "puzzle games", "العاب", "لعبه",
             "action games", "adventure games", "racing games", "strategy games"
         ]) {
             return .games
@@ -287,67 +287,67 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
 
         // Use explicit source categories next. The values are normalized first,
         // so variants such as "Health & Fitness" and "Food & Drink" are handled.
-        if categorized(["health", "health fitness", "fitness", "medical", "medicine"]) {
+        if categorized(["health", "health fitness", "health and fitness", "fitness", "medical", "medicine", "الصحة", "الصحه", "الصحة واللياقة", "الصحه واللياقه", "لياقة", "لياقه"]) {
             return .health
         }
-        if categorized(["sports", "sport", "sports recreation"]) {
+        if categorized(["sports", "sport", "sports recreation", "sports and recreation", "الرياضة", "الرياضه", "رياضة", "رياضه"]) {
             return .sports
         }
-        if categorized(["news", "news magazines", "magazines newspapers"]) {
+        if categorized(["news", "news magazines", "news and magazines", "magazines newspapers", "magazines and newspapers", "الأخبار", "الاخبار", "أخبار", "اخبار", "مجلات", "صحف"]) {
             return .news
         }
-        if categorized(["lifestyle", "life style"]) {
+        if categorized(["lifestyle", "life style", "نمط الحياة", "نمط الحياه", "اسلوب الحياة", "اسلوب الحياه"]) {
             return .lifestyle
         }
-        if categorized(["graphics design", "graphic design", "design", "photo video"]) {
+        if categorized(["graphics design", "graphics and design", "graphic design", "design", "photo video", "photo and video", "التصميم", "تصميم"]) {
             return .design
         }
-        if categorized(["photography", "camera"]) {
+        if categorized(["photography", "camera", "التصوير", "تصوير", "كاميرا"]) {
             return .photography
         }
         if categorized(["entertainment", "music", "video", "media", "streaming"]) {
             return .media
         }
-        if categorized(["social", "social networking", "communication", "messaging"]) {
+        if categorized(["social", "social networking", "communication", "messaging", "التواصل الاجتماعي", "تواصل اجتماعي", "مراسلة"]) {
             return .social
         }
-        if categorized(["finance", "banking", "financial"]) {
+        if categorized(["finance", "banking", "financial", "المال", "التمويل", "مصارف", "مصرف"]) {
             return .finance
         }
-        if categorized(["productivity", "business", "office"]) {
+        if categorized(["productivity", "business", "office", "الإنتاجية", "الانتاجية", "الأعمال", "الاعمال"]) {
             return .productivity
         }
-        if categorized(["developer", "developer tools", "development", "programming"]) {
+        if categorized(["developer", "developer tools", "development", "programming", "البرمجة", "برمجة", "مطورين"]) {
             return .developer
         }
-        if categorized(["signing", "sideloading"]) {
+        if categorized(["signing", "sideloading", "التوقيع", "تثبيت ipa", "شهادات"]) {
             return .signing
         }
-        if categorized(["jailbreak", "tweaks"]) {
+        if categorized(["jailbreak", "tweaks", "جيلبريك", "تويكات", "تويك"]) {
             return .jailbreak
         }
-        if categorized(["customization", "themes", "personalization"]) {
+        if categorized(["customization", "themes", "personalization", "التخصيص", "ثيمات", "خلفيات"]) {
             return .customization
         }
-        if categorized(["ai", "artificial intelligence", "machine learning"]) {
+        if categorized(["ai", "artificial intelligence", "machine learning", "الذكاء الاصطناعي", "ذكاء اصطناعي"]) {
             return .ai
         }
-        if categorized(["education", "reference", "books"]) {
+        if categorized(["education", "reference", "books", "التعليم", "تعليم", "دراسة"]) {
             return .education
         }
-        if categorized(["shopping", "retail", "e commerce"]) {
+        if categorized(["shopping", "retail", "e commerce", "التسوق", "تسوق"]) {
             return .shopping
         }
-        if categorized(["travel", "travel navigation"]) {
+        if categorized(["travel", "travel navigation", "السفر", "رحلات"]) {
             return .travel
         }
-        if categorized(["navigation", "maps"]) {
+        if categorized(["navigation", "maps", "الملاحة", "خرائط"]) {
             return .navigation
         }
-        if categorized(["food", "food drink", "food dining"]) {
+        if categorized(["food", "food drink", "food and drink", "food dining", "الطعام", "الطبخ", "وصفات", "مطاعم"]) {
             return .food
         }
-        if categorized(["utilities", "utility", "tools"]) {
+        if categorized(["utilities", "utility", "tools", "أدوات", "ادوات", "خدمات"]) {
             return .utilities
         }
 
