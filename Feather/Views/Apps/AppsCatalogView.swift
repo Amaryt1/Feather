@@ -6,8 +6,9 @@ import NukeUI
 import SWCompression
 
 private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
-    case all, games, emulators, media, design, social, productivity
-    case developer, signing, jailbreak, customization, ai, education, utilities, other
+    case all, games, emulators, media, design, photography, social, productivity
+    case developer, signing, jailbreak, customization, ai, education
+    case utilities, finance, shopping, travel, health, navigation, news, lifestyle, sports, food, other
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         case .emulators: "المحاكيات"
         case .media: "الأفلام والوسائط"
         case .design: "التصميم وتحرير الصور"
+        case .photography: "التصوير الفوتوغرافي"
         case .social: "التواصل الاجتماعي"
         case .productivity: "الإنتاجية والعمل"
         case .developer: "البرمجة والمطورين"
@@ -27,6 +29,15 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         case .ai: "الذكاء الاصطناعي"
         case .education: "التعليم"
         case .utilities: "الأدوات والخدمات"
+        case .finance: "المال والأعمال المصرفية"
+        case .shopping: "التسوق"
+        case .travel: "السفر والحجوزات"
+        case .health: "الصحة واللياقة"
+        case .navigation: "الخرائط والملاحة"
+        case .news: "الأخبار والمجلات"
+        case .lifestyle: "نمط الحياة"
+        case .sports: "الرياضة"
+        case .food: "الطعام والطبخ"
         case .other: "تطبيقات أخرى"
         }
     }
@@ -38,6 +49,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         case .emulators: "arcade.stick"
         case .media: "play.rectangle"
         case .design: "paintpalette"
+        case .photography: "camera"
         case .social: "bubble.left.and.bubble.right"
         case .productivity: "checklist"
         case .developer: "chevron.left.forwardslash.chevron.right"
@@ -47,6 +59,15 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         case .ai: "sparkles"
         case .education: "graduationcap"
         case .utilities: "wrench.and.screwdriver"
+        case .finance: "creditcard"
+        case .shopping: "bag"
+        case .travel: "airplane"
+        case .health: "heart"
+        case .navigation: "map"
+        case .news: "newspaper"
+        case .lifestyle: "leaf"
+        case .sports: "figure.run"
+        case .food: "fork.knife"
         case .other: "app"
         }
     }
@@ -55,6 +76,8 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         let raw = (app.category ?? "")
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         let text = [app.category, app.name, app.subtitle, app.description,
                     app.localizedDescription, app.developer]
             .compactMap { $0 }
@@ -64,33 +87,60 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
 
         func has(_ terms: [String]) -> Bool { terms.contains { text.contains($0) } }
 
+        // Prefer explicit, specific categories supplied by the repository.
+        switch raw {
+        case "games", "game", "gaming": return .games
+        case "emulator", "emulators": return .emulators
+        case "graphics", "photo-video", "design", "graphic design": return .design
+        case "photography", "photo": return .photography
+        case "entertainment", "music", "video", "media": return .media
+        case "social", "social networking": return .social
+        case "productivity", "business": return .productivity
+        case "developer", "development": return .developer
+        case "signing", "sideloading": return .signing
+        case "jailbreak", "tweaks": return .jailbreak
+        case "customization", "themes", "personalization": return .customization
+        case "ai", "artificial intelligence", "machine learning": return .ai
+        case "education": return .education
+        case "finance": return .finance
+        case "shopping": return .shopping
+        case "travel": return .travel
+        case "health", "fitness", "medical": return .health
+        case "navigation": return .navigation
+        case "news": return .news
+        case "lifestyle": return .lifestyle
+        case "sports": return .sports
+        case "food", "food & drink": return .food
+        default: break
+        }
+
+        // Use the app's descriptive metadata when the source has no specific category.
         if has(["emulator", "emulation", "retroarch", "ppsspp", "delta emulator", "محاكي", "محاكاة"]) { return .emulators }
-        if has(["game", "games", "gaming", "arcade", "rpg", "minecraft", "terraria", "fortnite", "لعبة", "ألعاب", "العاب"]) { return .games }
-        if has(["photo editor", "photo editing", "graphic design", "drawing", "illustration", "canva", "procreate", "vector editor", "video editor", "تصميم", "تعديل الصور", "رسم"]) { return .design }
-        if has(["movie", "movies", "tv series", "streaming", "iptv", "anime", "video player", "music player", "podcast", "cinema", "film", "أفلام", "مسلسلات", "انمي", "أنمي", "مشاهدة", "بث"]) { return .media }
+        if has(["video game", "mobile game", "gameplay", "gaming", "arcade", "rpg", "minecraft", "terraria", "fortnite", "pubg", "roblox", "clash of clans", "subway surfers", "لعبة", "ألعاب", "العاب"]) { return .games }
         if has(["artificial intelligence", "ai assistant", "chatgpt", "openai", "claude", "gemini", "copilot", "stable diffusion", "machine learning", "ذكاء اصطناعي"]) { return .ai }
         if has(["jailbreak", "trollstore", "sileo", "cydia", "zebra", "dopamine", "ellekit", "roothide", "bootstrap", "misaka", "serotonin", "filza", "tweak", "جيلبريك", "تويك"]) { return .jailbreak }
         if has(["signing", "signer", "ksign", "esign", "scarlet", "sideload", "ipa installer", "certificate manager", "توقيع", "تثبيت ipa", "شهادات"]) { return .signing }
         if has(["ide", "code editor", "developer tool", "terminal", "git client", "ssh client", "debugger", "programming", "xcode", "برمجة", "مطور"]) { return .developer }
+        if has(["photo editor", "photo editing", "graphic design", "drawing", "illustration", "canva", "procreate", "vector editor", "video editor", "تصميم", "تعديل الصور", "رسم"]) { return .design }
+        if has(["camera", "photography", "raw photo", "photo filter", "تصوير", "كاميرا"]) { return .photography }
+        if has(["movie", "movies", "tv series", "streaming", "iptv", "anime", "video player", "music player", "podcast", "cinema", "film", "أفلام", "مسلسلات", "انمي", "أنمي", "مشاهدة", "بث"]) { return .media }
         if has(["language learning", "dictionary", "flashcards", "education", "school", "university", "تعليم", "قاموس", "تعلم", "دراسة"]) { return .education }
-        if has(["productivity", "task manager", "todo", "notes", "calendar", "office suite", "document editor", "إنتاجية", "مهام", "ملاحظات"]) { return .productivity }
+        if has(["task manager", "todo", "notes", "calendar", "office suite", "document editor", "إنتاجية", "مهام", "ملاحظات"]) { return .productivity }
         if has(["social network", "messenger", "chat app", "telegram", "discord", "reddit", "social media", "مراسلة", "تواصل اجتماعي"]) { return .social }
         if has(["theme", "icon pack", "customization", "widgets", "wallpaper", "lock screen", "تخصيص", "ثيمات", "خلفيات"]) { return .customization }
+        if has(["banking", "bank account", "investment", "stock market", "crypto wallet", "payment", "wallet", "bank", "مصرف", "محفظة", "دفع"]) { return .finance }
+        if has(["shopping", "marketplace", "online store", "e-commerce", "retail", "تسوق", "متجر", "شراء"]) { return .shopping }
+        if has(["flight", "hotel booking", "travel guide", "airline", "trip planner", "حجز فندق", "سفر", "رحلات"]) { return .travel }
+        if has(["fitness", "workout", "health", "medical", "doctor", "meditation", "sleep tracker", "لياقة", "صحة", "طبي"]) { return .health }
+        if has(["navigation", "maps", "gps", "directions", "خرائط", "ملاحة"]) { return .navigation }
+        if has(["news", "newspaper", "magazine", "breaking news", "أخبار", "مجلة"]) { return .news }
+        if has(["recipe", "cooking", "food delivery", "restaurant", "وصفات", "طبخ", "طعام", "مطعم"]) { return .food }
+        if has(["football", "soccer", "basketball", "tennis", "sports", "workout training", "كرة القدم", "رياضة"]) { return .sports }
+        if has(["lifestyle", "home design", "parenting", "pets", "نمط الحياة", "منزل"]) { return .lifestyle }
+        if has(["utility", "utilities", "file manager", "scanner", "calculator", "speed test", "weather", "أدوات", "حاسبة", "طقس"]) { return .utilities }
 
         switch raw {
-        case "games", "game", "gaming": return .games
-        case "graphics", "photo-video", "design", "photography": return .design
-        case "ai", "artificial-intelligence", "machine-learning": return .ai
-        case "emulator", "emulators": return .emulators
-        case "developer", "development": return .developer
-        case "entertainment", "music", "video", "media": return .media
-        case "productivity", "business": return .productivity
-        case "customization", "themes", "personalization": return .customization
-        case "jailbreak", "tweaks": return .jailbreak
-        case "signing", "sideloading": return .signing
-        case "education": return .education
-        case "social": return .social
-        case "utilities", "utility", "lifestyle", "health", "navigation", "weather", "finance", "news": return .utilities
+        case "utilities", "utility": return .utilities
         default: return .other
         }
     }
@@ -129,11 +179,20 @@ private struct AppsCatalogIndex: Sendable {
         entries.reserveCapacity(repositories.reduce(0) { $0 + $1.repository.apps.count })
         for context in repositories {
             for app in context.repository.apps {
-                let name = app.currentName
-                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayName = app.currentName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let normalizedName = displayName.lowercased()
+                guard !displayName.isEmpty,
+                      !["name", "unknown", "app"].contains(normalizedName),
+                      let downloadURL = app.currentDownloadUrl,
+                      let scheme = downloadURL.scheme?.lowercased(),
+                      ["http", "https"].contains(scheme),
+                      downloadURL.host != nil else { continue }
+
                 let bundle = (app.id ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                guard seen.insert("\(bundle)|\(name)").inserted else { continue }
+                let developer = (app.developer ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                let identity = bundle.isEmpty ? "name|\(normalizedName)|\(developer)" : "bundle|\(bundle)"
+                guard seen.insert(identity).inserted else { continue }
+
                 entries.append(.init(sourceURL: context.sourceURL, source: context.repository,
                                      app: app, category: AppsCatalogCategory.classify(app)))
             }
@@ -152,6 +211,14 @@ private struct AppsCatalogIndex: Sendable {
 
 
 struct AppsCatalogView: View {
+    // These repositories are intentionally fetched internally and never added to the visible Sources list.
+    private static let privateFeedURLs: [URL] = [
+        URL(string: "https://ipaomtk-source.shrubhub.workers.dev/ipaomtk.json")!,
+        URL(string: "https://iosvizor-source.shrubhub.workers.dev/iosvizor.json")!,
+        URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json")!,
+        URL(string: "https://ittza7aa.com/repo.json")!
+    ]
+
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = []
     @State private var selectedCategory: AppsCatalogCategory = .all
     @State private var searchText = ""
@@ -173,6 +240,55 @@ struct AppsCatalogView: View {
     @State private var categoryCounts: [AppsCatalogCategory: Int] = [:]
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
+
+    private static func fetchPrivateRepository(from url: URL) async -> SourceAppsView.SourceRepositoryContext? {
+        await withCheckedContinuation { continuation in
+            let service = NBFetchService()
+            service.fetch(from: url) { (result: Result<ASRepository, Error>) in
+                switch result {
+                case .success(let repository):
+                    continuation.resume(returning: SourceAppsView.SourceRepositoryContext(
+                        sourceURL: url, repository: repository
+                    ))
+                case .failure:
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func loadPrivateFeeds(force: Bool = false) async {
+        guard !hasLoaded || force else { return }
+        isLoading = true
+
+        let feeds = Self.privateFeedURLs
+        let loadedContexts = await withTaskGroup(
+            of: (Int, SourceAppsView.SourceRepositoryContext?).self,
+            returning: [SourceAppsView.SourceRepositoryContext].self
+        ) { group in
+            for (index, url) in feeds.enumerated() {
+                group.addTask {
+                    (index, await Self.fetchPrivateRepository(from: url))
+                }
+            }
+
+            var results: [(Int, SourceAppsView.SourceRepositoryContext?)] = []
+            for await result in group {
+                results.append(result)
+            }
+            return results
+                .sorted { $0.0 < $1.0 }
+                .compactMap { $0.1 }
+        }
+
+        let index = await Task.detached(priority: .userInitiated) {
+            AppsCatalogIndex.build(from: loadedContexts)
+        }.value
+        apply(index)
+        hasLoaded = true
+        isLoading = false
+    }
 
     private func apply(_ index: AppsCatalogIndex) {
         repositories = index.repositories
@@ -306,13 +422,7 @@ struct AppsCatalogView: View {
             }
         }
         .task {
-            guard !hasLoaded else { return }
-            repositories = []
-            catalogEntries = []
-            entriesByCategory = [:]
-            categoryCounts = [:]
-            hasLoaded = true
-            isLoading = false
+            await loadPrivateFeeds()
         }
     }
 
