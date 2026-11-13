@@ -129,7 +129,9 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             "clash royale", "clash royal", "subway surfers", "sabway surfers", "brawl stars", "stardew valley",
             "pokemon", "genshin impact", "honkai", "mobile legends",
             "league of legends", "wild rift", "asphalt", "need for speed",
-            "efootball", "fifa mobile", "fc mobile", "ea sports fc", "dream league soccer",
+            "efootball", "fifa mobile", "fifa 23", "fifa 24", "fifa 25", "fifa 26",
+            "fc mobile", "fc 24", "fc 25", "fc 26", "ea sports fc", "dream league soccer",
+            "football manager", "nba 2k", "madden nfl", "mlb the show", "f1 mobile racing",
             "real racing", "monopoly", "angry birds", "fruit ninja", "temple run",
             "hill climb", "shadow fight", "geometry dash", "plants vs zombies",
             "mortal kombat", "tekken", "street fighter", "terraria", "dead cells",
@@ -230,9 +232,9 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             return .travel
         }
         if named([
-            "health", "fitness", "workout", "gym", "medical", "doctor", "google fit", "apple health", "samsung health", "fitbod", "strong workout", "nike run club",
-            "myfitnesspal", "fitbit", "nike training club", "apple fitness",
-            "headspace", "sleep cycle", "calm", "medisafe", "ada health"
+            "google fit", "apple health", "samsung health", "fitbod", "strong workout",
+            "nike run club", "myfitnesspal", "fitbit", "nike training club",
+            "apple fitness", "headspace", "sleep cycle", "calm", "medisafe", "ada health"
         ]) {
             return .health
         }
@@ -346,6 +348,103 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             return .food
         }
         if categorized(["utilities", "utility", "tools"]) {
+            return .utilities
+        }
+
+        // A short title or subtitle can supply a clear purpose when a feed omits
+        // its category. These are specific phrases, not loose keyword fragments.
+        if titled([
+            "health and fitness", "fitness tracker", "workout tracker", "workout app",
+            "gym training", "medical app", "mental health", "health app"
+        ]) {
+            return .health
+        }
+        if titled([
+            "live sports scores", "sports scores", "football scores", "match schedule",
+            "match results", "league table", "sports news", "soccer", "basketball",
+            "tennis", "cricket", "rugby"
+        ]) {
+            return .sports
+        }
+        if titled([
+            "breaking news", "news reader", "news app", "world news", "daily news",
+            "newspaper", "magazine", "أخبار عاجلة", "نشرة الأخبار"
+        ]) {
+            return .news
+        }
+        if titled([
+            "streaming app", "video player", "movie player", "music player",
+            "music streaming", "video streaming", "podcast player", "iptv player"
+        ]) {
+            return .media
+        }
+        if titled([
+            "photo editor", "video editor", "graphic design", "drawing app",
+            "image editor", "animation editor"
+        ]) {
+            return .design
+        }
+        if titled([
+            "camera app", "camera controls", "photography app", "raw camera"
+        ]) {
+            return .photography
+        }
+        if titled([
+            "social network", "messaging app", "chat messenger", "social media"
+        ]) {
+            return .social
+        }
+        if titled([
+            "language learning", "online courses", "learning app", "education app"
+        ]) {
+            return .education
+        }
+        if titled([
+            "task manager", "to do list", "note taking", "calendar app",
+            "office suite", "pdf editor"
+        ]) {
+            return .productivity
+        }
+        if titled([
+            "code editor", "developer tools", "programming", "terminal emulator"
+        ]) {
+            return .developer
+        }
+        if titled([
+            "banking app", "personal finance", "payment wallet", "budget tracker"
+        ]) {
+            return .finance
+        }
+        if titled([
+            "online shopping", "shopping app", "e commerce", "marketplace"
+        ]) {
+            return .shopping
+        }
+        if titled([
+            "flight booking", "hotel booking", "travel guide", "trip planner"
+        ]) {
+            return .travel
+        }
+        if titled([
+            "maps and navigation", "gps navigation", "navigation app", "map app"
+        ]) {
+            return .navigation
+        }
+        if titled([
+            "home design", "home decor", "pet care", "parenting", "lifestyle app",
+            "personal journal", "habit tracker"
+        ]) {
+            return .lifestyle
+        }
+        if titled([
+            "food delivery", "recipe app", "cooking recipes", "food and drink"
+        ]) {
+            return .food
+        }
+        if titled([
+            "file manager", "document scanner", "qr code scanner", "speed test",
+            "weather forecast", "calculator app", "password manager", "vpn"
+        ]) {
             return .utilities
         }
 
