@@ -53,10 +53,15 @@ def fetch_repository(feed: tuple[str, str]) -> tuple[str, str, dict]:
             apps = repository.get("apps")
             if not isinstance(apps, list) or not apps:
                 raise ValueError("repository has no non-empty apps array")
-            if not any(isinstance(app, dict) for app in apps):
+            valid_apps = [app for app in apps if isinstance(app, dict)]
+            if not valid_apps:
                 raise ValueError("repository contains no valid app objects")
+            # Drop only malformed non-object list members. Preserve every app
+            # object, including alternate builds and modified app variants.
+            repository = dict(repository)
+            repository["apps"] = valid_apps
             print(
-                f"Fetched {name}: {len(apps):,} app records "
+                f"Fetched {name}: {len(valid_apps):,} valid app records "
                 f"({len(raw):,} bytes)",
                 flush=True,
             )
