@@ -983,15 +983,25 @@ struct AppsCatalogView: View {
         let index = await Task.detached(priority: .userInitiated) {
             AppsCatalogIndex.build(from: contexts, cachedCategories: cachedCategories)
         }.value
+
+        // Publish the ready catalog before doing any optional cache maintenance.
+        // Rewriting the full category map (thousands of entries) on every cold
+        // launch was delaying the first visible apps even when the map was valid.
         AppsCatalogMemoryCache.shared.store(index, sha256: sha256)
-        if let sha256 {
+        apply(index)
+
+        // The category map is immutable for a given catalog hash. Only create it
+        // when it is missing, and never make the UI wait for this disk write.
+        if let sha256, cachedCategories.isEmpty {
             var categories: [String: String] = [:]
+            categories.reserveCapacity(index.entries.count)
             for entry in index.entries {
                 categories[entry.id] = entry.category.rawValue
             }
-            await Self.saveCategoryMap(categories, sha256: sha256)
+            Task {
+                await Self.saveCategoryMap(categories, sha256: sha256)
+            }
         }
-        apply(index)
     }
 
     @MainActor
