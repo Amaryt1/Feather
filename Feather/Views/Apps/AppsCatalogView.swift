@@ -81,6 +81,9 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
             .replacingOccurrences(of: "آ", with: "ا")
             .replacingOccurrences(of: "ى", with: "ي")
             .replacingOccurrences(of: "ة", with: "ه")
+            // In Arabic text the conjunction "و" is attached to the next word.
+            // Separate it when preceded by a space so category labels still match.
+            .replacingOccurrences(of: " و", with: " ")
         let words = folded
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
@@ -234,7 +237,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         if named([
             "google fit", "apple health", "samsung health", "fitbod", "strong workout",
             "nike run club", "myfitnesspal", "fitbit", "nike training club",
-            "apple fitness", "headspace", "sleep cycle", "calm", "medisafe", "ada health"
+            "apple fitness", "strava", "headspace", "sleep cycle", "calm", "medisafe", "ada health"
         ]) {
             return .health
         }
@@ -254,7 +257,7 @@ private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
         if named([
             "onefootball", "fotmob", "sofascore", "flashscore", "livescore",
             "365scores", "espn", "bein sports", "f1 tv", "formula 1",
-            "nba", "nfl", "ufc", "cricbuzz", "wimbledon", "strava",
+            "nba", "nfl", "ufc", "cricbuzz", "wimbledon",
             "sports", "sport", "fifa", "motogp", "premier league", "football scores", "soccer", "basketball",
             "tennis", "cricket", "rugby"
         ]) {
