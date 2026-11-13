@@ -647,20 +647,20 @@ struct AppsCatalogView: View {
     }
 
     private static func readCachedCatalogFiles() async -> (PrivateAppsCatalogManifest, Data)? {
-        await Task.detached(priority: .utility) {
-            guard let manifest = readCachedManifest(),
+        await Task.detached(priority: .utility) { () -> (PrivateAppsCatalogManifest, Data)? in
+            guard let manifest = AppsCatalogView.readCachedManifest(),
                   manifest.schemaVersion == 1,
-                  manifest.sourceCount == privateFeedURLs.count,
-                  let data = readCachedCatalogData() else { return nil }
+                  manifest.sourceCount == AppsCatalogView.privateFeedURLs.count,
+                  let data = AppsCatalogView.readCachedCatalogData() else { return nil }
             return (manifest, data)
         }.value
     }
 
     private static func saveCatalog(_ data: Data, manifest: PrivateAppsCatalogManifest) async {
         await Task.detached(priority: .utility) {
-            guard let directory = privateCatalogCacheDirectory,
-                  let catalogURL = cachedCatalogURL,
-                  let manifestURL = cachedManifestURL else { return }
+            guard let directory = AppsCatalogView.privateCatalogCacheDirectory,
+                  let catalogURL = AppsCatalogView.cachedCatalogURL,
+                  let manifestURL = AppsCatalogView.cachedManifestURL else { return }
 
             do {
                 try FileManager.default.createDirectory(
@@ -680,7 +680,7 @@ struct AppsCatalogView: View {
         from compressedData: Data,
         expectedSHA256: String
     ) async -> [SourceAppsView.SourceRepositoryContext]? {
-        await Task.detached(priority: .userInitiated) {
+        await Task.detached(priority: .userInitiated) { () -> [SourceAppsView.SourceRepositoryContext]? in
             let actualSHA256 = SHA256.hash(data: compressedData)
                 .map { String(format: "%02x", $0) }
                 .joined()
@@ -688,13 +688,13 @@ struct AppsCatalogView: View {
                   let jsonData = try? GzipArchive.unarchive(archive: compressedData),
                   let payload = try? JSONDecoder().decode(PrivateAppsCatalogPayload.self, from: jsonData),
                   payload.schemaVersion == 1,
-                  payload.sources.count == privateFeedURLs.count,
+                  payload.sources.count == AppsCatalogView.privateFeedURLs.count,
                   !payload.sources.isEmpty,
                   payload.sources.allSatisfy({ !$0.repository.apps.isEmpty }) else {
                 return nil
             }
 
-            let expectedURLs = Set(privateFeedURLs.map(\.absoluteString))
+            let expectedURLs = Set(AppsCatalogView.privateFeedURLs.map(\.absoluteString))
             let receivedURLs = Set(payload.sources.map { $0.sourceURL.absoluteString })
             guard expectedURLs == receivedURLs else { return nil }
 
@@ -727,11 +727,12 @@ struct AppsCatalogView: View {
 
             let manifest = try JSONDecoder().decode(PrivateAppsCatalogManifest.self, from: data)
             guard manifest.schemaVersion == 1,
-                  manifest.sourceCount == privateFeedURLs.count,
+                  manifest.sourceCount == AppsCatalogView.privateFeedURLs.count,
                   manifest.appCount > 0,
                   manifest.sha256.count == 64,
                   manifest.catalogURL.scheme?.lowercased() == "https",
-                  manifest.catalogURL.host == "raw.githubusercontent.com" else {
+                  manifest.catalogURL.host == "raw.githubusercontent.com",
+                  manifest.catalogURL.path == "/Amaryt1/Feather/main/catalogs/private-apps/catalog.json.gz" else {
                 return nil
             }
             return manifest
