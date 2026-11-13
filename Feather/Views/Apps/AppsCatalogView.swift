@@ -614,7 +614,7 @@ private struct AppsCatalogIndex: Codable, Sendable {
                     sourceURL: context.sourceURL, sourceIndex: sourceIndex, appIndex: appIndex,
                     name: app.currentName, description: app.currentDescription, developer: app.developer,
                     version: app.currentVersion, updatedAt: app.currentDate?.date,
-                    size: app.currentAppVersion?.size.map { Int64($0) } ?? app.size,
+                    size: app.currentAppVersion?.size.flatMap { Int64(exactly: $0) } ?? app.size,
                     iconURL: app.iconURL, downloadURL: downloadURL, uniqueID: app.currentUniqueId,
                     category: category
                 ))
@@ -1120,10 +1120,18 @@ struct AppsCatalogView: View {
         guard contexts.indices.contains(entry.sourceIndex) else { return }
         let context = contexts[entry.sourceIndex]
         guard context.repository.apps.indices.contains(entry.appIndex) else { return }
+        var repository = context.repository
+        var app = repository.apps[entry.appIndex]
+        if app.id == nil,
+           let storedUUID = entry.uniqueID.split(separator: ".", maxSplits: 1).first,
+           let uuid = UUID(uuidString: String(storedUUID)) {
+            app.uuid = uuid
+            repository.apps[entry.appIndex] = app
+        }
         selectedRoute = SourceAppsView.SourceAppRoute(
             sourceURL: context.sourceURL,
-            source: context.repository,
-            app: context.repository.apps[entry.appIndex]
+            source: repository,
+            app: app
         )
     }
 
