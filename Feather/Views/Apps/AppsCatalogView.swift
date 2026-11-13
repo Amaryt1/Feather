@@ -6,7 +6,7 @@ import NimbleJSON
 import NukeUI
 import SWCompression
 
-private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
+private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     case all, games, emulators, media, design, photography, social, productivity
     case developer, signing, jailbreak, customization, ai, education
     case utilities, finance, shopping, travel, health, navigation, news, lifestyle, sports, food, other
@@ -537,7 +537,7 @@ private struct AppsCatalogEntry: Identifiable, Sendable {
     }
 }
 
-private struct AppsCatalogIndex: Sendable {
+private struct AppsCatalogIndex: Codable, Sendable {
     let repositories: [SourceAppsView.SourceRepositoryContext]
     let entries: [AppsCatalogEntry]
     let entriesByCategory: [AppsCatalogCategory: [AppsCatalogEntry]]
@@ -620,6 +620,7 @@ private struct PrivateAppsCatalogIndexCache: Codable {
     let schemaVersion: Int
     let sha256: String
     let categories: [String: String]
+    let index: AppsCatalogIndex?
 }
 
 @MainActor
@@ -672,28 +673,36 @@ struct AppsCatalogView: View {
         privateCatalogCacheDirectory?.appendingPathComponent("catalog-index.json")
     }
 
-    private static func readCachedCategoryMap(sha256: String?) async -> [String: String] {
-        guard let sha256, let url = cachedIndexURL else { return [:] }
-        return await Task.detached(priority: .utility) {
+    private static func readCachedIndex(sha256: String?) async -> AppsCatalogIndex? {
+        guard let sha256, let url = cachedIndexURL else { return nil }
+        return await Task.detached(priority: .userInitiated) {
             guard let data = try? Data(contentsOf: url),
                   let cache = try? JSONDecoder().decode(PrivateAppsCatalogIndexCache.self, from: data),
-                  cache.schemaVersion == 1,
-                  cache.sha256 == sha256 else { return [:] }
-            return cache.categories
+                  cache.schemaVersion == 2, cache.sha256 == sha256,
+                  let index = cache.index, !index.entries.isEmpty else { return nil }
+            return index
         }.value
     }
 
-    private static func saveCategoryMap(_ categories: [String: String], sha256: String?) async {
+    private static func saveCatalogIndex(_ index: AppsCatalogIndex, sha256: String?) async {
         guard let sha256, let url = cachedIndexURL else { return }
         await Task.detached(priority: .utility) {
-            let cache = PrivateAppsCatalogIndexCache(
-                schemaVersion: 1,
-                sha256: sha256,
-                categories: categories
-            )
+            var categories: [String: String] = [:]
+            categories.reserveCapacity(index.entries.count)
+            for entry in index.entries { categories[entry.id] = entry.category.rawValue }
+            let cache = PrivateAppsCatalogIndexCache(schemaVersion: 2, sha256: sha256, categories: categories, index: index)
             guard let data = try? JSONEncoder().encode(cache) else { return }
             try? data.write(to: url, options: .atomic)
         }.value
+    }
+
+    nonisolated private static func readBundledPrivateCatalogManifest() -> PrivateAppsCatalogManifest? {
+        guard let url = Bundle.main.url(forResource: "PrivateAppsCatalogSeedManifest", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let manifest = try? JSONDecoder().decode(PrivateAppsCatalogManifest.self, from: data),
+              manifest.schemaVersion == 1, manifest.sourceCount == privateFeedURLs.count,
+              manifest.appCount > 0, manifest.sha256.count == 64 else { return nil }
+        return manifest
     }
 
     nonisolated private static func readCachedManifest() -> PrivateAppsCatalogManifest? {
@@ -977,8 +986,18 @@ struct AppsCatalogView: View {
             return
         }
 
-        // On a cold app launch, decode the last valid disk snapshot once. The
-        // category map avoids repeating the expensive text classification pass.
+        // Restore the ready index before reading, hashing or decompressing the feed.
+        if let manifest = await Self.readCachedManifest() ?? Self.readBundledPrivateCatalogManifest(),
+           let cachedIndex = await Self.readCachedIndex(sha256: manifest.sha256) {
+            AppsCatalogMemoryCache.shared.store(cachedIndex, sha256: manifest.sha256)
+            apply(cachedIndex)
+            hasLoaded = true
+            isLoading = false
+            Task { await refreshPrivateCatalogInBackground() }
+            return
+        }
+
+        // First launch or invalid cache: parse the verified catalog and build its index.
         if let cached = await Self.loadCachedPrivateCatalog() {
             await applyRepositories(cached.contexts, sha256: cached.sha256)
             hasLoaded = true
@@ -1054,9 +1073,8 @@ struct AppsCatalogView: View {
         _ contexts: [SourceAppsView.SourceRepositoryContext],
         sha256: String?
     ) async {
-        let cachedCategories = await Self.readCachedCategoryMap(sha256: sha256)
         let index = await Task.detached(priority: .userInitiated) {
-            AppsCatalogIndex.build(from: contexts, cachedCategories: cachedCategories)
+            AppsCatalogIndex.build(from: contexts)
         }.value
 
         // Publish the ready catalog before doing any optional cache maintenance.
@@ -1065,17 +1083,10 @@ struct AppsCatalogView: View {
         AppsCatalogMemoryCache.shared.store(index, sha256: sha256)
         apply(index)
 
-        // The category map is immutable for a given catalog hash. Only create it
-        // when it is missing, and never make the UI wait for this disk write.
-        if let sha256, cachedCategories.isEmpty {
-            var categories: [String: String] = [:]
-            categories.reserveCapacity(index.entries.count)
-            for entry in index.entries {
-                categories[entry.id] = entry.category.rawValue
-            }
-            Task {
-                await Self.saveCategoryMap(categories, sha256: sha256)
-            }
+        // Persist the complete ready index after publishing it. Atomic replacement
+        // preserves the last valid snapshot if a write is interrupted.
+        if let sha256 {
+            Task { await Self.saveCatalogIndex(index, sha256: sha256) }
         }
     }
 
