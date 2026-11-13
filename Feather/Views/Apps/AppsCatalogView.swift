@@ -983,7 +983,10 @@ struct AppsCatalogView: View {
         }.value
         await AppsCatalogMemoryCache.shared.store(index, sha256: sha256)
         if let sha256 {
-            let categories = Dictionary(uniqueKeysWithValues: index.entries.map { ($0.id, $0.category.rawValue) })
+            var categories: [String: String] = [:]
+            for entry in index.entries {
+                categories[entry.id] = entry.category.rawValue
+            }
             await Self.saveCategoryMap(categories, sha256: sha256)
         }
         apply(index)
