@@ -265,7 +265,6 @@ struct AppsCatalogView: View {
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isHistoryPresented = false
     @State private var isDownloadsPresented = false
-    @State private var isSourcesStatusPresented = false
 
     // These feed URLs are intentionally private to the app and are never displayed as source entries.
     private let feedURLs: [URL] = [
@@ -399,11 +398,6 @@ struct AppsCatalogView: View {
             .refreshable { await loadRepositories(forceRefresh: true) }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { isSourcesStatusPresented = true } label: {
-                        Image(systemName: "network")
-                    }
-                    .accessibilityLabel("حالة المصادر")
-
                     Button { isDownloadsPresented = true } label: {
                         Image(systemName: "arrow.down.circle")
                     }
@@ -436,11 +430,6 @@ struct AppsCatalogView: View {
             }
             .sheet(isPresented: $isDownloadsPresented) {
                 AppsCatalogDownloadsView()
-            }
-            .sheet(isPresented: $isSourcesStatusPresented) {
-                AppsCatalogSourcesStatusView(onRefresh: { url in
-                    await loadRepositories(forceRefresh: true, sourceURL: url)
-                })
             }
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
