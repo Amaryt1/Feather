@@ -222,10 +222,21 @@ private struct NewAppFeatureCard: View {
                     .padding(.vertical, 12)
                     .background {
                         Rectangle()
-                            .fill(.ultraThinMaterial.opacity(0.45))
+                            .fill(.ultraThinMaterial.opacity(0.50))
                             .environment(\.colorScheme, .dark)
                             .overlay {
                                 Rectangle().fill(Color.black.opacity(0.035))
+                            }
+                            .mask {
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .clear, location: 0),
+                                        .init(color: .black, location: 0.32),
+                                        .init(color: .black, location: 1)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             }
                     }
                 }
