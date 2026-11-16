@@ -79,11 +79,11 @@ struct AboutView: View {
             }
 
             VStack(spacing: 5) {
-                Text("Feather")
+                Text("AMARYT STORE")
                     .font(.system(size: 29, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
-                Text("مساحة التواصل والدعم")
+                Text("المتجر والتطبيقات")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -126,7 +126,7 @@ struct AboutView: View {
         HStack(spacing: 7) {
             Image(systemName: "heart.fill")
                 .foregroundStyle(.pink)
-            Text("شكراً لاستخدامك Feather")
+            Text("شكراً لاستخدامك AMARYT STORE")
                 .foregroundStyle(.secondary)
         }
         .font(.footnote.weight(.medium))
