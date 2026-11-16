@@ -13,6 +13,7 @@ struct NewAppsView: View {
     @State private var repository: ASRepository?
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var isRefreshing = false
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
 
     var body: some View {
@@ -63,7 +64,14 @@ struct NewAppsView: View {
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
             }
         }
-        .task { await loadRepository() }
+        .task {
+            await loadRepository()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 120_000_000_000)
+                guard !Task.isCancelled else { break }
+                await loadRepository()
+            }
+        }
     }
 
     private var cacheURL: URL {
@@ -73,61 +81,66 @@ struct NewAppsView: View {
 
     @MainActor
     private func loadRepository() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
         isLoading = repository == nil
         loadError = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            isRefreshing = false
+        }
 
-        // اعرض آخر نسخة محفوظة فوراً قبل محاولة الاتصال بالإنترنت.
+        // اعرض آخر نسخة محفوظة فوراً، ثم حدّثها من GitHub.
         if repository == nil,
            let cachedData = try? Data(contentsOf: cacheURL),
            let cachedRepository = try? JSONDecoder().decode(ASRepository.self, from: cachedData) {
             repository = cachedRepository
         }
 
-        do {
-            // احصل أولاً على SHA لأحدث commit غيّر apps.json حتى لا نقرأ نسخة
-            // قديمة من رابط raw الثابت الخاص بفرع main.
-            var commitsRequest = URLRequest(
-                url: URL(string: "https://api.github.com/repos/Amaryt1/Mstoda/commits?path=apps.json&per_page=1")!
-            )
-            commitsRequest.cachePolicy = .reloadIgnoringLocalCacheData
-            commitsRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-            commitsRequest.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        // نقرأ apps.json مباشرةً من raw.githubusercontent.com لتجنب استهلاك
+        // حد GitHub REST API عند وجود عدد كبير من المستخدمين.
+        // معامل متغير مع تعليمات no-cache يقللان احتمال وصول نسخة CDN قديمة.
+        var lastError: Error?
+        for attempt in 0..<2 {
+            do {
+                var components = URLComponents(url: AMARYTStoreFeed.url, resolvingAgainstBaseURL: false)!
+                components.queryItems = [
+                    URLQueryItem(
+                        name: "_refresh",
+                        value: "\(Int(Date().timeIntervalSince1970 * 1000))-\(attempt)"
+                    )
+                ]
 
-            let (commitsData, commitsResponse) = try await URLSession.shared.data(for: commitsRequest)
-            guard let commitsHTTP = commitsResponse as? HTTPURLResponse,
-                  (200...299).contains(commitsHTTP.statusCode),
-                  let commits = try JSONSerialization.jsonObject(with: commitsData) as? [[String: Any]],
-                  let latestCommit = commits.first,
-                  let commitSHA = latestCommit["sha"] as? String,
-                  !commitSHA.isEmpty else {
-                throw URLError(.badServerResponse)
-            }
+                var request = URLRequest(url: components.url!, timeoutInterval: 25)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                request.setValue("no-cache, no-store, max-age=0", forHTTPHeaderField: "Cache-Control")
+                request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
-            // رابط commit ثابت المحتوى، ويتغير تلقائياً مع كل تعديل للكتالوج.
-            let latestFeedURL = URL(
-                string: "https://raw.githubusercontent.com/Amaryt1/Mstoda/\(commitSHA)/apps.json"
-            )!
-            var feedRequest = URLRequest(url: latestFeedURL)
-            feedRequest.cachePolicy = .reloadIgnoringLocalCacheData
-            feedRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode),
+                      !data.isEmpty else {
+                    throw URLError(.badServerResponse)
+                }
 
-            let (data, response) = try await URLSession.shared.data(for: feedRequest)
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode),
-                  !data.isEmpty else {
-                throw URLError(.badServerResponse)
-            }
-
-            // لا نستبدل النسخة المحلية إلا بعد نجاح تنزيل JSON وتحليله بالكامل.
-            let decoded = try JSONDecoder().decode(ASRepository.self, from: data)
-            try data.write(to: cacheURL, options: .atomic)
-            repository = decoded
-        } catch {
-            if repository == nil {
-                loadError = "تعذر تحميل المستودع. تحقق من الاتصال ومن ملف apps.json."
+                // لا نستبدل النسخة المعروضة أو المحفوظة إلا بعد نجاح تحليل الملف كاملاً.
+                let decoded = try JSONDecoder().decode(ASRepository.self, from: data)
+                try data.write(to: cacheURL, options: .atomic)
+                repository = decoded
+                loadError = nil
+                return
+            } catch {
+                lastError = error
+                if attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                }
             }
         }
+
+        if repository == nil {
+            loadError = "تعذر تحميل المستودع. تحقق من الاتصال ومن ملف apps.json."
+        }
+        _ = lastError
     }
 }
 
