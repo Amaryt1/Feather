@@ -1209,7 +1209,7 @@ struct AppsCatalogView: View {
                     Button {
                         selectedCategory = category
                     } label: {
-                        Label("\(category.title) · \(categoryCount(category))", systemImage: category.icon)
+                        Label(category.title, systemImage: category.icon)
                             .font(.subheadline.weight(.medium))
                             .padding(.horizontal, 13)
                             .padding(.vertical, 9)
@@ -1224,9 +1224,6 @@ struct AppsCatalogView: View {
         }
     }
 
-    private func categoryCount(_ category: AppsCatalogCategory) -> Int {
-        category == .all ? entries.count : categoryCounts[category, default: 0]
-    }
 
 }
 
