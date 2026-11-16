@@ -85,7 +85,34 @@ struct NewAppsView: View {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: AMARYTStoreFeed.url)
+            // احصل أولاً على SHA لأحدث commit غيّر apps.json حتى لا نقرأ نسخة
+            // قديمة من رابط raw الثابت الخاص بفرع main.
+            var commitsRequest = URLRequest(
+                url: URL(string: "https://api.github.com/repos/Amaryt1/Mstoda/commits?path=apps.json&per_page=1")!
+            )
+            commitsRequest.cachePolicy = .reloadIgnoringLocalCacheData
+            commitsRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            commitsRequest.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+
+            let (commitsData, commitsResponse) = try await URLSession.shared.data(for: commitsRequest)
+            guard let commitsHTTP = commitsResponse as? HTTPURLResponse,
+                  (200...299).contains(commitsHTTP.statusCode),
+                  let commits = try JSONSerialization.jsonObject(with: commitsData) as? [[String: Any]],
+                  let latestCommit = commits.first,
+                  let commitSHA = latestCommit["sha"] as? String,
+                  !commitSHA.isEmpty else {
+                throw URLError(.badServerResponse)
+            }
+
+            // رابط commit ثابت المحتوى، ويتغير تلقائياً مع كل تعديل للكتالوج.
+            let latestFeedURL = URL(
+                string: "https://raw.githubusercontent.com/Amaryt1/Mstoda/\\(commitSHA)/apps.json"
+            )!
+            var feedRequest = URLRequest(url: latestFeedURL)
+            feedRequest.cachePolicy = .reloadIgnoringLocalCacheData
+            feedRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+
+            let (data, response) = try await URLSession.shared.data(for: feedRequest)
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode),
                   !data.isEmpty else {
