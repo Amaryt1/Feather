@@ -1116,15 +1116,7 @@ struct AppsCatalogView: View {
                     .refreshable {
                         await loadPrivateFeeds(force: true)
                     }
-                    .overlay(alignment: .top) {
-                        Text("\(filteredEntries.count) تطبيق")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .padding(.top, 4)
-                            .allowsHitTesting(false)
-                    }
+
                 }
             }
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
