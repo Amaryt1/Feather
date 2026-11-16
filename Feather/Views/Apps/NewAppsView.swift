@@ -177,7 +177,7 @@ private struct NewAppFeatureCard: View {
                     }
 
                     LinearGradient(
-                        colors: [.clear, accent.opacity(0.18), Color.black.opacity(0.58)],
+                        colors: [.clear, accent.opacity(0.08), Color.black.opacity(0.12)],
                         startPoint: .center,
                         endPoint: .bottom
                     )
@@ -210,17 +210,6 @@ private struct NewAppFeatureCard: View {
                                 .foregroundStyle(.white.opacity(0.88))
                                 .lineLimit(2)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(.ultraThinMaterial)
-                                .environment(\.colorScheme, .dark)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color.black.opacity(0.20))
-                                }
-                        }
                         Spacer(minLength: 0)
                         Image(systemName: "arrow.up.right")
                             .font(.caption.bold())
@@ -228,7 +217,17 @@ private struct NewAppFeatureCard: View {
                             .padding(10)
                             .background(.ultraThinMaterial, in: Circle())
                     }
-                    .padding(15)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 12)
+                    .background {
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .environment(\.colorScheme, .dark)
+                            .overlay {
+                                Rectangle().fill(Color.black.opacity(0.08))
+                            }
+                    }
                 }
                 .frame(height: 205)
                 .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
