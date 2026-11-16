@@ -15,18 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 FEEDS = (
-    ("IPAOMTK", "https://ipaomtk-source.shrubhub.workers.dev/ipaomtk.json"),
-    ("iOSVizor", "https://iosvizor-source.shrubhub.workers.dev/iosvizor.json"),
-    ("AltMaker", "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json"),
-    ("Ittza7aa", "https://ittza7aa.com/repo.json"),
+    ("AltMaker", "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com"),
 )
 
 OUTPUT_DIR = Path("catalogs/private-apps")
 CATALOG_OUTPUT = OUTPUT_DIR / "catalog.json.gz"
 MANIFEST_OUTPUT = OUTPUT_DIR / "manifest.json"
-BUNDLED_OUTPUT_DIR = Path("Feather/Resources")
-BUNDLED_CATALOG_OUTPUT = BUNDLED_OUTPUT_DIR / "PrivateAppsCatalogSeed.json.gz"
-BUNDLED_MANIFEST_OUTPUT = BUNDLED_OUTPUT_DIR / "PrivateAppsCatalogSeedManifest.json"
 CATALOG_URL = (
     "https://raw.githubusercontent.com/Amaryt1/Feather/main/"
     "catalogs/private-apps/catalog.json.gz"
@@ -97,14 +91,13 @@ def atomic_write(path: Path, content: bytes) -> None:
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    BUNDLED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Fetch every feed concurrently, but preserve the configured source order.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(FEEDS)) as executor:
         fetched = list(executor.map(fetch_repository, FEEDS))
 
-    if len(fetched) != 4:
-        raise RuntimeError("the private catalog must contain exactly four feeds")
+    if len(fetched) != 1:
+        raise RuntimeError("the private catalog must contain exactly one feed")
 
     generated_at = datetime.now(timezone.utc).isoformat()
     sources = []
@@ -147,7 +140,7 @@ def main() -> None:
 
     # Validate the exact gzip artifact before publishing either output.
     decoded = json.loads(gzip.decompress(compressed).decode("utf-8"))
-    if decoded.get("schemaVersion") != 1 or len(decoded.get("sources", [])) != 4:
+    if decoded.get("schemaVersion") != 1 or len(decoded.get("sources", [])) != 1:
         raise RuntimeError("generated catalog failed its schema/source validation")
     for source in decoded["sources"]:
         repository = source.get("repository")
@@ -170,7 +163,7 @@ def main() -> None:
         "sha256": digest,
         "compressedBytes": len(compressed),
         "uncompressedBytes": len(serialized),
-        "sourceCount": 4,
+        "sourceCount": 1,
         "appCount": app_count,
         "sources": source_summary,
     }
@@ -185,12 +178,8 @@ def main() -> None:
     atomic_write(CATALOG_OUTPUT, compressed)
     atomic_write(MANIFEST_OUTPUT, manifest_bytes)
 
-    # Bundle the same verified artifact that is published for background updates.
-    # Both delivery paths therefore stay byte-for-byte identical and share one hash.
-    atomic_write(BUNDLED_CATALOG_OUTPUT, compressed)
-    atomic_write(BUNDLED_MANIFEST_OUTPUT, manifest_bytes)
 
-    print("Private four-feed catalog generated successfully.")
+    print("Private single-feed catalog generated successfully.")
     print(f"Sources: {len(sources)}")
     print(f"App records (before conservative UI deduplication): {app_count:,}")
     print(f"Uncompressed size: {len(serialized):,} bytes")
@@ -198,8 +187,6 @@ def main() -> None:
     print(f"SHA-256: {digest}")
     print(f"Catalog: {CATALOG_OUTPUT}")
     print(f"Manifest: {MANIFEST_OUTPUT}")
-    print(f"Bundled catalog: {BUNDLED_CATALOG_OUTPUT}")
-    print(f"Bundled manifest: {BUNDLED_MANIFEST_OUTPUT}")
 
 
 if __name__ == "__main__":

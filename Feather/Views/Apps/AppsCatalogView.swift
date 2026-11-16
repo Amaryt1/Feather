@@ -645,10 +645,7 @@ private final class AppsCatalogMemoryCache {
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
     nonisolated private static let privateFeedURLs: [URL] = [
-        URL(string: "https://ipaomtk-source.shrubhub.workers.dev/ipaomtk.json")!,
-        URL(string: "https://iosvizor-source.shrubhub.workers.dev/iosvizor.json")!,
-        URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json")!,
-        URL(string: "https://ittza7aa.com/repo.json")!
+        URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!
     ]
     nonisolated private static let privateCatalogManifestURL = URL(
         string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/manifest.json"
@@ -766,65 +763,6 @@ struct AppsCatalogView: View {
                 )
             }
         }.value
-    }
-
-    nonisolated private static func readBundledPrivateCatalogFiles() async -> (PrivateAppsCatalogManifest, Data)? {
-        await Task.detached(priority: .utility) {
-            guard
-                let manifestURL = Bundle.main.url(
-                    forResource: "PrivateAppsCatalogSeedManifest",
-                    withExtension: "json"
-                ),
-                let manifestData = try? Data(contentsOf: manifestURL),
-                let manifest = try? JSONDecoder().decode(
-                    PrivateAppsCatalogManifest.self,
-                    from: manifestData
-                ),
-                manifest.schemaVersion == 1,
-                manifest.sourceCount == AppsCatalogView.privateFeedURLs.count,
-                manifest.appCount > 0,
-                manifest.compressedBytes > 0,
-                manifest.uncompressedBytes > 0,
-                manifest.sha256.count == 64,
-                manifest.catalogURL.scheme?.lowercased() == "https",
-                manifest.catalogURL.host == "raw.githubusercontent.com",
-                manifest.catalogURL.path == "/Amaryt1/Feather/main/catalogs/private-apps/catalog.json.gz",
-                let catalogURL = Bundle.main.url(
-                    forResource: "PrivateAppsCatalogSeed",
-                    withExtension: "json.gz"
-                ),
-                let compressedData = try? Data(contentsOf: catalogURL),
-                compressedData.count == manifest.compressedBytes
-            else {
-                return nil
-            }
-
-            let digest = SHA256.hash(data: compressedData)
-                .map { String(format: "%02x", $0) }
-                .joined()
-            guard digest.caseInsensitiveCompare(manifest.sha256) == .orderedSame else {
-                return nil
-            }
-
-            return (manifest, compressedData)
-        }.value
-    }
-
-    private static func loadBundledPrivateCatalog() async -> (
-        sha256: String,
-        contexts: [SourceAppsView.SourceRepositoryContext]
-    )? {
-        guard
-            let (manifest, data) = await readBundledPrivateCatalogFiles(),
-            let contexts = await catalogContexts(
-                from: data,
-                expectedSHA256: manifest.sha256
-            )
-        else {
-            return nil
-        }
-
-        return (manifest.sha256, contexts)
     }
 
     private static func loadCachedPrivateCatalog() async -> (sha256: String, contexts: [SourceAppsView.SourceRepositoryContext])? {
@@ -981,22 +919,6 @@ struct AppsCatalogView: View {
         // category map avoids repeating the expensive text classification pass.
         if let cached = await Self.loadCachedPrivateCatalog() {
             await applyRepositories(cached.contexts, sha256: cached.sha256)
-            hasLoaded = true
-            isLoading = false
-            if force {
-                await refreshPrivateCatalogInBackground()
-            } else {
-                Task { await refreshPrivateCatalogInBackground() }
-            }
-            return
-        }
-
-        // A fresh installation already contains a verified four-feed snapshot
-        // inside the IPA. Use it before any network request so the store can work
-        // on first launch and while offline; only the lightweight freshness check
-        // and any changed snapshot are fetched in the background.
-        if let bundled = await Self.loadBundledPrivateCatalog() {
-            await applyRepositories(bundled.contexts, sha256: bundled.sha256)
             hasLoaded = true
             isLoading = false
             if force {
