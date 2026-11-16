@@ -207,7 +207,8 @@ private struct NewAppFeatureCard: View {
                 let output = filter?.outputImage,
                 let pixel = CIContext().createCGImage(output, from: CGRect(x: 0, y: 0, width: 1, height: 1))
             else { return }
-            sampledColor = Color(uiColor: UIColor(cgImage: pixel))
+            let average = CIColor(cgImage: pixel)
+            sampledColor = Color(uiColor: UIColor(red: average.red, green: average.green, blue: average.blue, alpha: average.alpha))
         } catch {
             // Keep the configured tint color or system accent when artwork is unavailable.
         }
