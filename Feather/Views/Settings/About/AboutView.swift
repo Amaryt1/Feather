@@ -56,7 +56,7 @@ struct AboutView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("حول")
+        .navigationTitle("حول المتجر")
         .navigationBarTitleDisplayMode(.inline)
     }
 
