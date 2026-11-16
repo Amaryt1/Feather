@@ -222,10 +222,10 @@ private struct NewAppFeatureCard: View {
                     .padding(.vertical, 12)
                     .background {
                         Rectangle()
-                            .fill(.ultraThinMaterial)
+                            .fill(.ultraThinMaterial.opacity(0.45))
                             .environment(\.colorScheme, .dark)
                             .overlay {
-                                Rectangle().fill(Color.black.opacity(0.08))
+                                Rectangle().fill(Color.black.opacity(0.035))
                             }
                     }
                 }
