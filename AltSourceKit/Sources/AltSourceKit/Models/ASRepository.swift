@@ -79,21 +79,7 @@ public struct ASRepository: Sendable, Decodable, Hashable, Identifiable {
 			forKey: .userInfo
 		)
 
-		let decodedApps = try container.decodeIfPresent([App].self, forKey: .apps)
-		guard
-			let apps = decodedApps,
-			!apps.isEmpty
-		else {
-			throw NSError(
-				domain: "FeatherSources",
-				code: 44521,
-				userInfo: [
-					NSLocalizedDescriptionKey: "This source does not contain any apps."
-				]
-			)
-		}
-		
-		self.apps = apps
+		self.apps = try container.decodeIfPresent([App].self, forKey: .apps) ?? []
 		self.featuredApps =
 			try container.decodeIfPresent([App.ID].self, forKey: .featuredApps) ?? []
 		self.news = try container.decodeIfPresent([News].self, forKey: .news) ?? []
@@ -166,6 +152,7 @@ extension ASRepository {
 		public var localizedDescription: String?
 
 		public var iconURL: URL?
+		public var bannerURL: URL?
 
 		public var tintColor: Color?
 
@@ -259,6 +246,7 @@ extension ASRepository {
 				)
 
 			self.iconURL = try container.decodeIfPresent(URL.self, forKey: .iconURL)
+			self.bannerURL = try container.decodeIfPresent(URL.self, forKey: .bannerURL)
 
 			self.tintColor =
 				try container.decodeIfPresent(Color.self, forKey: .tintColor)
@@ -348,7 +336,7 @@ extension ASRepository {
 			case name, subtitle, description
 			case developer = "developerName"
 			case versions, version, versionDate, date, versionDescription, downloadURL,
-			     localizedDescription, iconURL, tintColor, size, category, beta
+			     localizedDescription, iconURL, bannerURL, tintColor, size, category, beta
 			case permissions, appPermissions
 			case screenshots, screenshotURLs
 			case marketplaceID
