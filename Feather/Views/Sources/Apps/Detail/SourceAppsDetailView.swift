@@ -31,6 +31,16 @@ struct SourceAppsDetailView: View {
 		ScrollView {
 			if #available(iOS 18, *) {
 				_header().flexibleHeaderContent()
+			} else if let bannerURL = app.bannerURL {
+				LazyImage(url: bannerURL) { state in
+					if let image = state.image {
+						image.resizable().aspectRatio(contentMode: .fill)
+					} else {
+						standardHeader
+					}
+				}
+				.frame(height: 210)
+				.clipped()
 			}
 			
 			VStack(alignment: .leading, spacing: 10) {
