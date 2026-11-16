@@ -106,7 +106,7 @@ struct NewAppsView: View {
 
             // رابط commit ثابت المحتوى، ويتغير تلقائياً مع كل تعديل للكتالوج.
             let latestFeedURL = URL(
-                string: "https://raw.githubusercontent.com/Amaryt1/Mstoda/\\(commitSHA)/apps.json"
+                string: "https://raw.githubusercontent.com/Amaryt1/Mstoda/\(commitSHA)/apps.json"
             )!
             var feedRequest = URLRequest(url: latestFeedURL)
             feedRequest.cachePolicy = .reloadIgnoringLocalCacheData
