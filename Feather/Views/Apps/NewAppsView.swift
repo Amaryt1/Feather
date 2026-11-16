@@ -210,6 +210,17 @@ private struct NewAppFeatureCard: View {
                                 .foregroundStyle(.white.opacity(0.88))
                                 .lineLimit(2)
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                                .environment(\.colorScheme, .dark)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color.black.opacity(0.20))
+                                }
+                        }
                         Spacer(minLength: 0)
                         Image(systemName: "arrow.up.right")
                             .font(.caption.bold())
