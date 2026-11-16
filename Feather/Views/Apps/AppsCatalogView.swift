@@ -1289,12 +1289,6 @@ private struct AppsCatalogPremiumCard: View {
     let entry: AppsCatalogEntry
     let open: () -> Void
 
-    @GestureState private var dragOffset: CGSize = .zero
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var tiltX: Double { reduceMotion ? 0 : Double(-dragOffset.height / 18) }
-    private var tiltY: Double { reduceMotion ? 0 : Double(dragOffset.width / 18) }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
             Button(action: open) {
@@ -1375,19 +1369,6 @@ private struct AppsCatalogPremiumCard: View {
                 }
         }
         .shadow(color: Color.black.opacity(0.07), radius: 14, y: 7)
-        .rotation3DEffect(.degrees(tiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.72)
-        .rotation3DEffect(.degrees(tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.72)
-        .scaleEffect(dragOffset == .zero ? 1 : 1.025)
-        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.72), value: dragOffset)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 8)
-                .updating($dragOffset) { value, state, _ in
-                    state = CGSize(
-                        width: max(-18, min(18, value.translation.width / 3)),
-                        height: max(-18, min(18, value.translation.height / 3))
-                    )
-                }
-        )
         .accessibilityElement(children: .contain)
     }
 }
