@@ -2,6 +2,8 @@ import SwiftUI
 import AltSourceKit
 import NimbleJSON
 import NukeUI
+import CoreImage
+import UIKit
 
 private enum AMARYTStoreFeed {
     static let url = URL(string: "https://raw.githubusercontent.com/Amaryt1/Mstoda/main/apps.json")!
@@ -24,7 +26,7 @@ struct NewAppsView: View {
                 } else if let repository, !repository.apps.isEmpty {
                     ScrollView {
                         LazyVStack(spacing: 16) {
-                            ForEach(repository.apps) { app in
+                            ForEach(repository.apps, id: \.currentUniqueId) { app in
                                 NewAppFeatureCard(app: app) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
                                         sourceURL: AMARYTStoreFeed.url,
@@ -38,15 +40,22 @@ struct NewAppsView: View {
                     }
                     .refreshable { await loadRepository() }
                 } else {
-                    ContentUnavailableView {
-                        Label("لا توجد تطبيقات جديدة", systemImage: "sparkles")
-                    } description: {
+                    VStack(spacing: 12) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.secondary)
+                        Text("لا توجد تطبيقات جديدة")
+                            .font(.headline)
                         Text(loadError ?? "ستظهر التطبيقات هنا عند إضافتها إلى مستودع AMARYT STORE.")
-                    } actions: {
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                         Button("إعادة المحاولة") {
                             Task { await loadRepository() }
                         }
                     }
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .background(Color(uiColor: .systemGroupedBackground))
@@ -82,7 +91,8 @@ private struct NewAppFeatureCard: View {
     let app: ASRepository.App
     let open: () -> Void
 
-    private var accent: Color { app.tintColor ?? Color.accentColor }
+    @State private var sampledColor: Color?
+    private var accent: Color { sampledColor ?? app.tintColor ?? Color.accentColor }
 
     var body: some View {
         Button(action: open) {
@@ -179,6 +189,28 @@ private struct NewAppFeatureCard: View {
             }
         }
         .buttonStyle(.plain)
+        .task(id: (app.bannerURL ?? app.iconURL)?.absoluteString) {
+            await sampleArtworkColor()
+        }
+    }
+
+    @MainActor
+    private func sampleArtworkColor() async {
+        guard let url = app.bannerURL ?? app.iconURL else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let image = UIImage(data: data), let input = CIImage(image: image) else { return }
+            let filter = CIFilter(name: "CIAreaAverage")
+            filter?.setValue(input, forKey: kCIInputImageKey)
+            filter?.setValue(CIVector(cgRect: input.extent), forKey: "inputExtent")
+            guard
+                let output = filter?.outputImage,
+                let pixel = CIContext().createCGImage(output, from: CGRect(x: 0, y: 0, width: 1, height: 1))
+            else { return }
+            sampledColor = Color(uiColor: UIColor(cgImage: pixel))
+        } catch {
+            // Keep the configured tint color or system accent when artwork is unavailable.
+        }
     }
 
     private var bannerFallback: some View {
