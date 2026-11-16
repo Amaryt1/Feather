@@ -848,7 +848,6 @@ struct AppsCatalogView: View {
     }
 
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = AppsCatalogMemoryCache.shared.index?.repositories ?? []
-    @State private var selectedCategory: AppsCatalogCategory = .all
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
     @State private var isLoading = AppsCatalogMemoryCache.shared.index == nil
@@ -1037,13 +1036,8 @@ struct AppsCatalogView: View {
         recentlyUpdatedEntries = Self.recentUpdates(in: index.entries)
     }
 
-    private var visibleCategories: [AppsCatalogCategory] {
-        AppsCatalogCategory.allCases.filter { $0 == .all || categoryCounts[$0, default: 0] > 0 }
-    }
-
     private var filteredEntries: [AppsCatalogEntry] {
-        let selectedEntries = selectedCategory == .all ? entries : entriesByCategory[selectedCategory, default: []]
-        var result = selectedEntries
+        var result = entries
 
         if !searchText.isEmpty {
             result = result.filter { entry in
@@ -1069,7 +1063,6 @@ struct AppsCatalogView: View {
     var body: some View {
         NBNavigationView("التطبيقات") {
             VStack(spacing: 0) {
-                categoryPicker
                 catalogControls
 
                 if isLoading && repositories.isEmpty {
@@ -1193,29 +1186,6 @@ struct AppsCatalogView: View {
         .padding(.bottom, 8)
     }
 
-    private var categoryPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(visibleCategories) { category in
-                    let selected = selectedCategory == category
-                    Button {
-                        selectedCategory = category
-                    } label: {
-                        Label(category.title, systemImage: category.icon)
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 9)
-                            .background(Capsule().fill(selected ? Color.accentColor : Color(.secondarySystemBackground)))
-                            .foregroundStyle(selected ? Color.white : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
-        }
-    }
-
 
 }
 
@@ -1335,10 +1305,6 @@ private struct AppsCatalogPremiumCard: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .frame(height: 34, alignment: .topLeading)
-                        Text(entry.category.title)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Color.accentColor)
-                            .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
