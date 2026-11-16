@@ -207,8 +207,23 @@ private struct NewAppFeatureCard: View {
                 let output = filter?.outputImage,
                 let pixel = CIContext().createCGImage(output, from: CGRect(x: 0, y: 0, width: 1, height: 1))
             else { return }
-            let average = CIColor(cgImage: pixel)
-            sampledColor = Color(uiColor: UIColor(red: average.red, green: average.green, blue: average.blue, alpha: average.alpha))
+            let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: 4)
+            defer { bytes.deallocate() }
+            let bitmap = CGContext(
+                data: bytes,
+                width: 1,
+                height: 1,
+                bitsPerComponent: 8,
+                bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+            bitmap?.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            sampledColor = Color(
+                red: Double(bytes[0]) / 255,
+                green: Double(bytes[1]) / 255,
+                blue: Double(bytes[2]) / 255
+            )
         } catch {
             // Keep the configured tint color or system accent when artwork is unavailable.
         }
