@@ -15,8 +15,6 @@ struct NewAppsView: View {
     @State private var loadError: String?
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
 
-    private let fetchService = NBFetchService()
-
     var body: some View {
         NavigationStack {
             Group {
@@ -68,21 +66,40 @@ struct NewAppsView: View {
         .task { await loadRepository() }
     }
 
+    private var cacheURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("amaryt-store-apps.json")
+    }
+
     @MainActor
     private func loadRepository() async {
-        isLoading = true
+        isLoading = repository == nil
         loadError = nil
         defer { isLoading = false }
 
+        // اعرض آخر نسخة محفوظة فوراً قبل محاولة الاتصال بالإنترنت.
+        if repository == nil,
+           let cachedData = try? Data(contentsOf: cacheURL),
+           let cachedRepository = try? JSONDecoder().decode(ASRepository.self, from: cachedData) {
+            repository = cachedRepository
+        }
+
         do {
-            let decoded: ASRepository = try await withCheckedThrowingContinuation { continuation in
-                fetchService.fetch(from: AMARYTStoreFeed.url) { (result: Result<ASRepository, Error>) in
-                    continuation.resume(with: result)
-                }
+            let (data, response) = try await URLSession.shared.data(from: AMARYTStoreFeed.url)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode),
+                  !data.isEmpty else {
+                throw URLError(.badServerResponse)
             }
+
+            // لا نستبدل النسخة المحلية إلا بعد نجاح تنزيل JSON وتحليله بالكامل.
+            let decoded = try JSONDecoder().decode(ASRepository.self, from: data)
+            try data.write(to: cacheURL, options: .atomic)
             repository = decoded
         } catch {
-            loadError = "تعذر تحميل المستودع. تحقق من الاتصال ومن ملف apps.json."
+            if repository == nil {
+                loadError = "تعذر تحميل المستودع. تحقق من الاتصال ومن ملف apps.json."
+            }
         }
     }
 }
