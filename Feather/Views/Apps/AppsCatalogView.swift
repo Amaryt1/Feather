@@ -1038,7 +1038,7 @@ struct AppsCatalogView: View {
     }
 
     private var visibleCategories: [AppsCatalogCategory] {
-        AppsCatalogCategory.allCases.filter { $0 == .all || categoryCount($0) > 0 }
+        AppsCatalogCategory.allCases.filter { $0 == .all || categoryCounts[$0, default: 0] > 0 }
     }
 
     private var filteredEntries: [AppsCatalogEntry] {
