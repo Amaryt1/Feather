@@ -645,7 +645,8 @@ private final class AppsCatalogMemoryCache {
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
     nonisolated private static let privateFeedURLs: [URL] = [
-        URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!
+        URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!,
+        URL(string: "https://repository.apptesters.org/")!
     ]
     nonisolated private static let privateCatalogManifestURL = URL(
         string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/manifest.json"
@@ -1003,7 +1004,35 @@ struct AppsCatalogView: View {
 
     @MainActor
     private func refreshPrivateCatalogInBackground() async {
-        guard let manifest = await Self.fetchPrivateCatalogManifest() else { return }
+        guard let manifest = await Self.fetchPrivateCatalogManifest() else {
+            // The published snapshot may not yet include every configured feed.
+            // In that case refresh the configured repositories directly.
+            let feeds = Self.privateFeedURLs
+            let loadedContexts = await withTaskGroup(
+                of: (Int, SourceAppsView.SourceRepositoryContext?).self,
+                returning: [SourceAppsView.SourceRepositoryContext].self
+            ) { group in
+                for (index, url) in feeds.enumerated() {
+                    group.addTask {
+                        (index, await Self.fetchPrivateRepository(from: url))
+                    }
+                }
+
+                var results: [(Int, SourceAppsView.SourceRepositoryContext?)] = []
+                for await result in group {
+                    results.append(result)
+                }
+                return results
+                    .sorted { $0.0 < $1.0 }
+                    .compactMap { $0.1 }
+            }
+
+            // Do not replace a working catalog with a partial response.
+            guard loadedContexts.count == feeds.count else { return }
+            await applyRepositories(loadedContexts, sha256: nil)
+            hasLoaded = true
+            return
+        }
 
         // An unchanged manifest means the current in-memory index is already valid.
         // Do not decompress, decode, classify, sort, or rebuild the same catalog.
