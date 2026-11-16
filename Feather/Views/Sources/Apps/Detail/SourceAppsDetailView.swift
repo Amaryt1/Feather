@@ -236,7 +236,18 @@ extension SourceAppsDetailView {
 	@ViewBuilder
 	private func _header() -> some View {
 		ZStack {
-			if let iconURL = source.currentIconURL {
+			if let bannerURL = app.bannerURL {
+				LazyImage(url: bannerURL) { state in
+					if let image = state.image {
+						image.resizable()
+							.aspectRatio(contentMode: .fill)
+							.frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+							.clipped()
+					} else {
+						standardHeader
+					}
+				}
+			} else if let iconURL = source.currentIconURL {
 				LazyImage(url: iconURL) { state in
 					if let image = state.image {
 						image.resizable()
