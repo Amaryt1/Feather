@@ -108,20 +108,12 @@ extension SettingsView {
 		Section {
 			NavigationLink(destination: AboutView()) {
 				Label {
-					Text(verbatim: .localized("About %@", arguments: Bundle.main.name))
+					Text("حول المتجر")
 				} icon: {
 					FRAppIconView(size: 23)
 				}
 			}
             
-			Button(.localized("Submit Feedback"), systemImage: "safari") {
-				UIApplication.open(URL(string: "\(_githubUrl)/issues/new/choose")!)
-			}
-			Button(.localized("GitHub Repository"), systemImage: "safari") {
-				UIApplication.open(_githubUrl)
-			}
-		} footer: {
-			Text(.localized("If any issues occur within the app please report it via the GitHub repository. When submitting an issue, make sure to submit detailed information."))
 		}
 	}
     
