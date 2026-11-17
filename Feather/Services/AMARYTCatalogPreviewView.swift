@@ -82,7 +82,9 @@ struct AMARYTCatalogPreviewView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let current = try await manifest ?? AMARYTCatalogAPI.fetchManifest()
+            let current: AMARYTCatalogAPI.Manifest
+            if let cached = manifest { current = cached }
+            else { current = try await AMARYTCatalogAPI.fetchManifest() }
             manifest = current
             guard nextPage < current.pageCount else { return }
             let page = try await AMARYTCatalogAPI.fetchPage(nextPage, manifest: current)
