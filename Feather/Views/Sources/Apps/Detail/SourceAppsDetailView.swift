@@ -353,13 +353,23 @@ struct SourceAppsDetailView: View {
 
     private var storeActions: some View {
         HStack(spacing: 10) {
-            Button("تثبيت") {
+            Button {
                 if availableCertificates.isEmpty {
                     showCertificateAlert = true
                 } else {
                     startDirectInstall()
                 }
             }
+            label: {
+                if isDirectInstallSigning {
+                    Label("جارٍ التوقيع…", systemImage: "checkmark.shield")
+                } else if let id = directInstallDownloadID, downloadManager.getDownload(by: id) != nil {
+                    Label("جارٍ التنزيل…", systemImage: "arrow.down.circle")
+                } else {
+                    Text("تثبيت")
+                }
+            }
+            .disabled(isDirectInstallSigning || directInstallDownloadID != nil)
             .buttonStyle(.borderedProminent)
             Button("استيراد إلى المكتبة") {
                 if let url = app.currentDownloadUrl {
