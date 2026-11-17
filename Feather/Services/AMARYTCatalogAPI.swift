@@ -69,7 +69,8 @@ enum AMARYTCatalogAPI {
               url.path.hasPrefix(baseURL.path) else { throw CatalogError.invalidPath }
         var request = URLRequest(url: url)
         request.timeoutInterval = 20
-        request.cachePolicy = .returnCacheDataElseLoad
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw CatalogError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? -1)
