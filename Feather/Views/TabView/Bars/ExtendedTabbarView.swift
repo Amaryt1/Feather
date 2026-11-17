@@ -22,7 +22,7 @@ struct ExtendedTabbarView: View {
 		sortDescriptors: [NSSortDescriptor(keyPath: \AltSource.name, ascending: true)],
 		animation: .snappy
 	) private var _sources: FetchedResults<AltSource>
-		
+
 	var body: some View {
 		TabView {
 			ForEach(TabEnum.defaultTabs, id: \.hashValue) { tab in
@@ -98,10 +98,8 @@ struct ExtendedTabbarView: View {
 			}
 		}
 	}
-
 	
 	var standardIcon: some View {
 		Image(systemName: "app.dashed")
 	}
 }
-

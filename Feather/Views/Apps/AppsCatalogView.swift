@@ -692,7 +692,6 @@ struct AppsCatalogView: View {
             try? data.write(to: url, options: .atomic)
         }.value
     }
-
     nonisolated private static func readCachedManifest() -> PrivateAppsCatalogManifest? {
         guard let url = cachedManifestURL,
               let data = try? Data(contentsOf: url) else { return nil }
@@ -854,6 +853,7 @@ struct AppsCatalogView: View {
     @State private var hasLoaded = AppsCatalogMemoryCache.shared.index != nil
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isDownloadsPresented = false
+    @State private var isHistoryPresented = false
     @State private var isRecentUpdatesPresented = false
 
     // Build the catalog index once when repositories change. Rebuilding this
@@ -1120,6 +1120,11 @@ struct AppsCatalogView: View {
                     }
                     .accessibilityLabel("مدير التحميلات")
 
+                    Button { isHistoryPresented = true } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .accessibilityLabel("سجل التحميلات")
+
                     Button { isRecentUpdatesPresented = true } label: {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .overlay(alignment: .topTrailing) {
@@ -1141,6 +1146,9 @@ struct AppsCatalogView: View {
             }
             .sheet(isPresented: $isDownloadsPresented) {
                 AppsCatalogDownloadsView()
+            }
+            .sheet(isPresented: $isHistoryPresented) {
+                AppsCatalogHistoryView()
             }
             .sheet(isPresented: $isRecentUpdatesPresented) {
                 AppsCatalogRecentUpdatesView(entries: recentlyUpdatedEntries) { entry in
@@ -1185,7 +1193,6 @@ struct AppsCatalogView: View {
         .padding(.horizontal)
         .padding(.bottom, 8)
     }
-
 
 }
 
