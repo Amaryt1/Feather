@@ -15,7 +15,7 @@ from build_private_apps_catalog import FEEDS, fetch_repository, atomic_write
 
 OUT = Path("catalogs/private-apps/v2")
 BASE = "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/v2/"
-MAX_SHARD = 8 * 1024 * 1024
+APPS_PER_SHARD = 250
 
 def encode(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -28,21 +28,28 @@ def build():
     result = []
     for name, url in FEEDS:
         _, _, repo = fetch_repository((name, url))
-        # Preserve the full AltStore repository structure for client compatibility.
-        # Chunking into individual app pages is the next protocol revision.
-        raw = encode({"sourceURL": url, "repository": repo})
-        compressed = gzip.compress(raw, compresslevel=6, mtime=0)
-        if len(compressed) > MAX_SHARD:
-            raise ValueError(f"{name}: shard too large ({len(compressed)} bytes); requires app-level pagination")
-        sha = hashlib.sha256(compressed).hexdigest()
-        filename = f"{sha}.json.gz"
-        target = OUT / filename
-        if not target.exists():
-            atomic_write(target, compressed)
-        result.append({"name": name, "sourceURL": url, "sha256": sha,
-                       "url": BASE + filename, "compressedBytes": len(compressed),
-                       "appCount": len(repo["apps"])})
-        print(f"{name}: {len(repo['apps'])} apps; changed={old_shards.get(url, {}).get('sha256') != sha}")
+        # Each page preserves repository metadata but contains at most 250 apps.
+        # A changed page gets a new content-addressed URL; unchanged pages stay cached.
+        apps = repo["apps"]
+        metadata = {key: value for key, value in repo.items() if key != "apps"}
+        pages = []
+        for offset in range(0, len(apps), APPS_PER_SHARD):
+            page = {"sourceURL": url, "repository": {**metadata, "apps": apps[offset:offset + APPS_PER_SHARD]}}
+            compressed = gzip.compress(encode(page), compresslevel=6, mtime=0)
+            sha = hashlib.sha256(compressed).hexdigest()
+            filename = f"{sha}.json.gz"
+            target = OUT / filename
+            if not target.exists():
+                atomic_write(target, compressed)
+            pages.append({"sha256": sha, "url": BASE + filename,
+                          "compressedBytes": len(compressed),
+                          "appCount": len(page["repository"]["apps"])})
+        result.append({"name": name, "sourceURL": url, "appCount": len(apps),
+                       "pages": pages})
+        previous_pages = old_shards.get(url, {}).get("pages", [])
+        old_hashes = {p["sha256"] for p in previous_pages}
+        changed = sum(p["sha256"] not in old_hashes for p in pages)
+        print(f"{name}: {len(apps)} apps; {len(pages)} pages; {changed} changed pages")
     manifest = {"schemaVersion": 2, "sources": result,
                 "revision": hashlib.sha256(encode(result)).hexdigest()}
     new = encode(manifest) + b"\n"
