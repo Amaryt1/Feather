@@ -29,6 +29,28 @@ enum AMARYTCatalogAPI {
         let detailPath: String?
     }
 
+    struct RecentManifest: Decodable {
+        let schemaVersion: Int
+        let totalApps: Int
+        let pageCount: Int
+        let pagePattern: String
+    }
+
+    static func fetchRecentManifest(session: URLSession = .shared) async throws -> RecentManifest {
+        let manifest: RecentManifest = try await fetch("recent/manifest.json", session: session)
+        guard manifest.schemaVersion == 2 else { throw CatalogError.unsupportedSchema(manifest.schemaVersion) }
+        return manifest
+    }
+
+    static func fetchRecentPage(_ index: Int, manifest: RecentManifest, session: URLSession = .shared) async throws -> [AppSummary] {
+        guard index >= 0 && index < manifest.pageCount else { return [] }
+        let path = manifest.pagePattern.replacingOccurrences(
+            of: "{page:06d}", with: String(format: "%06d", index))
+        let page: Page = try await fetch(path, session: session)
+        guard page.schemaVersion == 2 else { throw CatalogError.unsupportedSchema(page.schemaVersion) }
+        return page.items
+    }
+
     struct Page: Decodable {
         let schemaVersion: Int
         let items: [AppSummary]
