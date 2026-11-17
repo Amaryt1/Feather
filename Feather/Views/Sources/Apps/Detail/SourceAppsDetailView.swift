@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CoreData
 import Combine
 import AltSourceKit
 import NimbleViews
@@ -13,6 +14,10 @@ import NukeUI
 
 // MARK: - SourceAppsDetailView
 struct SourceAppsDetailView: View {
+    @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
+    @State private var showCertificateAlert = false
+    @State private var showCertificates = false
+    @State private var showInstallExplanation = false
 	@ObservedObject var downloadManager = DownloadManager.shared
 	@State private var _downloadProgress: Double = 0
 	@State var cancellable: AnyCancellable? // Combine
@@ -70,7 +75,7 @@ struct SourceAppsDetailView: View {
 						
 						Spacer()
 						
-						DownloadButtonView(sourceURL: sourceURL, source: source, app: app)
+						storeActions
 					}
 					.lineLimit(2)
 					.frame(maxWidth: .infinity, alignment: .leading)
@@ -289,6 +294,51 @@ struct SourceAppsDetailView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private var storeActions: some View {
+        HStack(spacing: 10) {
+            Button("تثبيت") {
+                if availableCertificates.isEmpty {
+                    showCertificateAlert = true
+                } else {
+                    showInstallExplanation = true
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            Button("استيراد إلى المكتبة") {
+                if let url = app.currentDownloadUrl {
+                    _ = downloadManager.startDownload(
+                        from: url,
+                        id: app.currentUniqueId,
+                        sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
+                    )
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .font(.subheadline)
+        .alert("الشهادة مطلوبة", isPresented: $showCertificateAlert) {
+            Button("إضافة شهادة") { showCertificates = true }
+            Button("إلغاء", role: .cancel) {}
+        } message: {
+            Text("يجب إضافة شهادة قبل تثبيت التطبيق.")
+        }
+        .alert("التثبيت المباشر", isPresented: $showInstallExplanation) {
+            Button("حسنًا", role: .cancel) {}
+        } message: {
+            Text("الشهادة متوفرة. التثبيت المباشر دون إضافة التطبيق للمكتبة غير متاح بعد؛ لم يبدأ تنزيل التطبيق.")
+        }
+        .sheet(isPresented: $showCertificates) {
+            NavigationStack {
+                CertificatesView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("تم") { showCertificates = false }
+                        }
+                    }
             }
         }
     }
