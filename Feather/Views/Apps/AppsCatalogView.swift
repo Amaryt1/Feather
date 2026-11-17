@@ -1168,7 +1168,14 @@ struct AppsCatalogView: View {
         if let cached = await Self.cachedAppTesters() {
             await applyRepositories(repositories + [cached], sha256: nil)
         }
-        // Refresh in the background; a failed network request never erases cached apps.
+        // Avoid downloading and decoding 10k+ apps on every launch.
+        // A manual pull-to-refresh can still trigger the normal catalog refresh.
+        if let file = Self.appTestersCacheURL,
+           let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+           let modified = attributes[.modificationDate] as? Date,
+           Date().timeIntervalSince(modified) < 6 * 60 * 60 {
+            return
+        }
         guard let refreshed = await Self.fetchAndCacheAppTesters() else { return }
         let others = repositories.filter { $0.sourceURL != Self.appTestersFeedURL }
         await applyRepositories(others + [refreshed], sha256: nil)
