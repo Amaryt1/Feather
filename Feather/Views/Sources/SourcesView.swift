@@ -35,6 +35,26 @@ struct SourcesView: View {
 	var body: some View {
 		NBNavigationView(.localized("Sources")) {
 			NBListAdaptable {
+                Section {
+                    NavigationLink {
+                        AMARYTCatalogPreviewView()
+                    } label: {
+                        HStack(spacing: 18) {
+                            Image(systemName: "square.stack.3d.up")
+                                .font(.title2)
+                                .frame(width: 42, height: 42)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("AMARYT API Catalog (Beta)")
+                                    .font(.headline)
+                                Text("Browse remote apps without importing large sources")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                }
 				if !_filteredSources.isEmpty {
 					Section {
 						NavigationLink {
