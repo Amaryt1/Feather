@@ -1393,66 +1393,154 @@ private struct AppsCatalogRecentUpdatesView: View {
     let open: (AppsCatalogEntry) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var recentManifest: AMARYTCatalogAPI.RecentManifest?
+    @State private var recentApps: [AMARYTCatalogAPI.AppSummary] = []
+    @State private var nextPage = 0
+    @State private var loading = false
+    @State private var loadError: String?
+
+    private enum UpdateRow: Identifiable {
+        case source(AppsCatalogEntry)
+        case api(AMARYTCatalogAPI.AppSummary)
+
+        var id: String {
+            switch self {
+            case .source(let entry): return "source-\(entry.id)"
+            case .api(let app): return "api-\(app.id)"
+            }
+        }
+        var date: Date {
+            switch self {
+            case .source(let entry): return entry.app.currentDate?.date ?? .distantPast
+            case .api(let app):
+                guard let raw = app.versionDate else { return .distantPast }
+                let parser = ISO8601DateFormatter()
+                parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = parser.date(from: raw) { return date }
+                parser.formatOptions = [.withInternetDateTime]
+                if let date = parser.date(from: raw) { return date }
+                parser.formatOptions = [.withFullDate]
+                return parser.date(from: String(raw.prefix(10))) ?? .distantPast
+            }
+        }
+    }
+
+    private var rows: [UpdateRow] {
+        let api = recentManifest == nil ? apiEntries : recentApps
+        return (entries.map { UpdateRow.source($0) } + api.map { UpdateRow.api($0) })
+            .sorted { $0.date > $1.date }
+    }
+
+    private func loadNextPage() async {
+        guard !loading else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            let manifest: AMARYTCatalogAPI.RecentManifest
+            if let cached = recentManifest { manifest = cached }
+            else {
+                manifest = try await AMARYTCatalogAPI.fetchRecentManifest()
+                recentManifest = manifest
+            }
+            guard nextPage < manifest.pageCount else { return }
+            let apps = try await AMARYTCatalogAPI.fetchRecentPage(nextPage, manifest: manifest)
+            recentApps.append(contentsOf: apps)
+            nextPage += 1
+            loadError = nil
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
 
     var body: some View {
         NavigationStack {
             Group {
-                if entries.isEmpty && apiEntries.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "checkmark.seal")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.secondary)
-                        Text("لا توجد تحديثات حديثة")
-                            .font(.headline)
-                        Text("ستظهر هنا التطبيقات التي نُشرت تحديثاتها خلال آخر 7 أيام.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if rows.isEmpty && !loading && recentManifest?.pageCount == 0 {
+                    ContentUnavailableView("لا توجد تحديثات حديثة", systemImage: "clock")
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 14) {
-                            ForEach(apiEntries) { app in
-                                Button {
-                                    openAPI(app)
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(app.name).font(.headline)
-                                            Text("AMARYT · v\(app.version ?? "—")")
-                                                .font(.caption).foregroundStyle(.secondary)
+                            ForEach(rows) { row in
+                                switch row {
+                                case .source(let entry):
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "clock")
+                                                .font(.caption2)
+                                            if let date = entry.app.currentDate?.date {
+                                                Text("تم التحديث \(date.formatted(date: .abbreviated, time: .omitted))")
+                                                    .font(.caption.weight(.medium))
+                                            }
+                                            Spacer()
+                                            Text(entry.app.currentVersion.map { "v\($0)" } ?? "")
+                                                .font(.caption2.monospaced())
                                         }
-                                        Spacer()
-                                        Image(systemName: "chevron.left").foregroundStyle(.secondary)
+                                        .foregroundStyle(.secondary)
+                                        AppsCatalogPremiumCard(entry: entry) { open(entry) }
                                     }
-                                    .padding(12)
-                                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                                case .api(let app):
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "clock").font(.caption2)
+                                            Text("تم التحديث \(row.date.formatted(date: .abbreviated, time: .omitted))")
+                                                .font(.caption.weight(.medium))
+                                            Spacer()
+                                            Text(app.version.map { "v\($0)" } ?? "")
+                                                .font(.caption2.monospaced())
+                                        }
+                                        .foregroundStyle(.secondary)
+                                        Button { openAPI(app) } label: {
+                                            VStack(alignment: .leading, spacing: 11) {
+                                                ZStack {
+                                                    RoundedRectangle(cornerRadius: 18)
+                                                        .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                                                    if let icon = app.iconURL, let url = URL(string: icon) {
+                                                        AsyncImage(url: url) { image in
+                                                            image.resizable().scaledToFit()
+                                                        } placeholder: {
+                                                            Image(systemName: "app.fill")
+                                                                .foregroundStyle(.secondary)
+                                                        }
+                                                        .frame(width: 76, height: 76)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                                    }
+                                                }
+                                                .frame(height: 124)
+                                                Text(app.name).font(.headline).foregroundStyle(.primary)
+                                                Text(app.subtitle ?? "")
+                                                    .font(.caption).foregroundStyle(.secondary)
+                                                    .lineLimit(2)
+                                                HStack {
+                                                    Text("الحصول")
+                                                        .font(.subheadline.weight(.semibold))
+                                                        .foregroundStyle(.blue)
+                                                        .padding(.horizontal, 18).padding(.vertical, 7)
+                                                        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: Capsule())
+                                                    Spacer()
+                                                    Text(app.version.map { "v\($0)" } ?? "")
+                                                        .font(.caption2).foregroundStyle(.secondary)
+                                                }
+                                            }
+                                            .padding(14)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
-                                .buttonStyle(.plain)
                             }
-                            ForEach(entries) { entry in
-                                VStack(alignment: .leading, spacing: 7) {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "clock")
-                                            .font(.caption2)
-                                        if let date = entry.app.currentDate?.date {
-                                            Text("تم التحديث \(date.formatted(date: .abbreviated, time: .omitted))")
-                                                .font(.caption.weight(.medium))
-                                        } else {
-                                            Text("تحديث حديث")
-                                                .font(.caption.weight(.medium))
-                                        }
-                                        Spacer()
-                                        Text(entry.app.currentVersion.map { "v\($0)" } ?? "")
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .foregroundStyle(.secondary)
-                                    AppsCatalogPremiumCard(entry: entry) {
-                                        open(entry)
-                                    }
+                            if loading {
+                                ProgressView("جارٍ تحميل التحديثات…").padding()
+                            } else if let manifest = recentManifest, nextPage < manifest.pageCount {
+                                Button("تحميل المزيد من التحديثات") {
+                                    Task { await loadNextPage() }
+                                }
+                                .onAppear { Task { await loadNextPage() } }
+                                .padding()
+                            }
+                            if let loadError {
+                                Button("إعادة محاولة تحميل التحديثات: \(loadError)") {
+                                    Task { await loadNextPage() }
                                 }
                             }
                         }
@@ -1468,6 +1556,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                     Button("تم") { dismiss() }
                 }
             }
+            .task { await loadNextPage() }
         }
     }
 }
