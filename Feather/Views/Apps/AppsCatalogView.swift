@@ -1358,7 +1358,7 @@ private struct AppsCatalogPremiumCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 2)
-                DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+                DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app, opensDetails: true)
                     .scaleEffect(0.92)
             }
         }
