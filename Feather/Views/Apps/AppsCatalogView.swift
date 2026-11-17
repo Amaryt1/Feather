@@ -675,6 +675,7 @@ struct AppsCatalogView: View {
         URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!,
         URL(string: "https://raw.githubusercontent.com/Amaryt1/Mstoda/main/apps.json")!
     ]
+    nonisolated private static let appTestersFeedURL = URL(string: "https://repository.apptesters.org/")!
     nonisolated private static let privateCatalogManifestURL = URL(
         string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/manifest.json"
     )!
@@ -880,7 +881,7 @@ struct AppsCatalogView: View {
         string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/v2/manifest.json"
     )!
     nonisolated private static var useShardedCatalog: Bool {
-        UserDefaults.standard.bool(forKey: "AMARYT_ENABLE_SHARDED_CATALOG")
+        true
     }
 
     private static func loadShardedCatalog() async -> (sha256: String, contexts: [SourceAppsView.SourceRepositoryContext])? {
@@ -965,7 +966,6 @@ struct AppsCatalogView: View {
     @State private var isLoading = AppsCatalogMemoryCache.shared.index == nil
     @State private var hasLoaded = AppsCatalogMemoryCache.shared.index != nil
     @State private var sortOption: AppsCatalogSort = .recommended
-    @AppStorage("AMARYT_ENABLE_SHARDED_CATALOG") private var shardedCatalogEnabled = false
     @State private var isDownloadsPresented = false
     @State private var isRecentUpdatesPresented = false
 
@@ -1288,11 +1288,6 @@ struct AppsCatalogView: View {
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
             }
         }
-        .onChange(of: shardedCatalogEnabled) { _ in
-            AppsCatalogMemoryCache.shared.clear()
-            hasLoaded = false
-            Task { await loadPrivateFeeds(force: true) }
-        }
         .task {
             _ = AppsCatalogPersonalization.shared
             await loadPrivateFeeds()
@@ -1304,8 +1299,6 @@ struct AppsCatalogView: View {
             Spacer(minLength: 0)
 
             Menu {
-                Toggle("مصدر AppTesters التجريبي", isOn: $shardedCatalogEnabled)
-                Divider()
                 ForEach(AppsCatalogSort.allCases, id: \.rawValue) { option in
                     Button {
                         sortOption = option
