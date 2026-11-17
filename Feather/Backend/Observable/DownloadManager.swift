@@ -195,6 +195,13 @@ extension DownloadManager: URLSessionDownloadDelegate {
 	
 	func handlePachageFile(url: URL, dl: Download) throws {
 		FR.handlePackageFile(url, download: dl) { err in
+            if !dl.directInstall {
+                NotificationCenter.default.post(
+                    name: Notification.Name("Feather.libraryImportFinished"),
+                    object: dl.id,
+                    userInfo: err.map { ["error": $0.localizedDescription] }
+                )
+            }
             if err == nil, dl.directInstall, let uuid = dl.importedUUID {
                 NotificationCenter.default.post(name: Notification.Name("Feather.directInstallImported"), object: dl.id, userInfo: ["importedUUID": uuid])
             }
