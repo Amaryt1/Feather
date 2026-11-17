@@ -1377,7 +1377,7 @@ private struct AppsCatalogPremiumCard: View {
 }
 
 
-// Recommendations use explicit purpose/genre signals, never random catalog entries.
+// Prefer matching purposes, then the same category, then other available apps.
 enum RelatedApps {
     private struct Profile {
         let category: AppsCatalogCategory
@@ -1456,21 +1456,23 @@ enum RelatedApps {
 
     static func rank(app: ASRepository.App, candidates: [AppsCatalogEntry], limit: Int = 8) -> [AppsCatalogEntry] {
         let target = profile(app)
-        guard target.category != .other, limit > 0 else { return [] }
+        guard limit > 0 else { return [] }
         var scored: [(entry: AppsCatalogEntry, score: Int, profile: Profile)] = []
         for entry in candidates {
             let candidate = profile(entry.app)
             guard candidate.name != target.name,
                   target.bundle.isEmpty || candidate.bundle != target.bundle,
-                  entry.app.currentDownloadUrl != app.currentDownloadUrl,
-                  candidate.category == target.category else { continue }
+                  entry.app.currentDownloadUrl != app.currentDownloadUrl else { continue }
+            let sameCategory = target.category != .other && candidate.category == target.category
             let overlap = target.topics.intersection(candidate.topics)
-            // If we know the purpose, require evidence of that same purpose.
-            // Unknown media/game genres must not produce misleading suggestions.
-            if !target.topics.isEmpty && overlap.isEmpty { continue }
-            if target.topics.isEmpty && [.media, .games].contains(target.category) { continue }
-            let score = 10 + overlap.count * 100
+            // Strong purpose matches lead; broader category peers fill the shelf.
+            let score = sameCategory ? 100 + overlap.count * 100 : 0
             scored.append((entry, score, candidate))
+        }
+        // If even one category peer exists, keep the whole shelf in that
+        // category. Only use general store suggestions when none are available.
+        if scored.contains(where: { $0.score > 0 }) {
+            scored.removeAll { $0.score == 0 }
         }
         scored.sort {
             if $0.score != $1.score { return $0.score > $1.score }
