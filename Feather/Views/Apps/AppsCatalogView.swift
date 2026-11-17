@@ -888,6 +888,7 @@ struct AppsCatalogView: View {
     @State private var apiLoading = false
     @State private var apiError: String?
     @State private var selectedAPIApp: AMARYTCatalogAPI.AppSummary?
+    @State private var apiOpeningApp = false
 
 
     // Build the catalog index once when repositories change. Rebuilding this
@@ -1137,7 +1138,7 @@ struct AppsCatalogView: View {
                     ScrollView {
                         LazyVGrid(columns: catalogGridColumns, spacing: 16) {
                             ForEach(apiApps.filter { searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) }) { app in
-                                Button { selectedAPIApp = app } label: {
+                                Button { Task { await openAPIApp(app) } } label: {
                                     VStack(alignment: .leading, spacing: 9) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 20).fill(Color.accentColor.opacity(0.12))
@@ -1165,6 +1166,11 @@ struct AppsCatalogView: View {
                                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
                                 }
                                 .buttonStyle(.plain)
+                                .onAppear {
+                                    if apiApps.last?.id == app.id {
+                                        Task { await loadAPIPage() }
+                                    }
+                                }
                             }
                             ForEach(filteredEntries) { entry in
                                 AppsCatalogPremiumCard(entry: entry) {
@@ -1177,14 +1183,6 @@ struct AppsCatalogView: View {
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
                         .padding(.bottom, 24)
-                        if let manifest = apiManifest, apiNextPage < manifest.pageCount {
-                            Button(apiLoading ? "جارٍ التحميل…" : "تحميل 50 تطبيقًا إضافيًا من API") {
-                                Task { await loadAPIPage() }
-                            }
-                            .disabled(apiLoading)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                        }
                         if let apiError {
                             Button("إعادة محاولة تحميل API: \(apiError)") {
                                 Task { await loadAPIPage() }
@@ -1224,9 +1222,6 @@ struct AppsCatalogView: View {
 
                 }
             }
-            .sheet(item: $selectedAPIApp) { app in
-                AMARYTCatalogAppDetailView(app: app)
-            }
             .sheet(isPresented: $isDownloadsPresented) {
                 AppsCatalogDownloadsView()
             }
@@ -1246,6 +1241,58 @@ struct AppsCatalogView: View {
             _ = AppsCatalogPersonalization.shared
             await loadPrivateFeeds()
             await loadAPIPage()
+        }
+    }
+
+    /// Convert the selected remote detail into Feather's existing AltStore model.
+    /// The standard detail screen then owns Get, download, signing and library behavior.
+    @MainActor
+    private func openAPIApp(_ summary: AMARYTCatalogAPI.AppSummary) async {
+        guard !apiOpeningApp, let path = summary.detailPath else { return }
+        apiOpeningApp = true
+        defer { apiOpeningApp = false }
+        do {
+            let data = try await AMARYTCatalogAPI.fetchDetail(path)
+            let object = try JSONSerialization.jsonObject(with: data)
+            guard let envelope = object as? [String: Any],
+                  let items = envelope["items"] as? [[String: Any]],
+                  let item = items.first(where: { ($0["id"] as? String) == summary.id }),
+                  let rawURL = item["downloadURL"] as? String,
+                  let url = URL(string: rawURL),
+                  ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
+                apiError = "رابط IPA غير متاح لهذا التطبيق"
+                return
+            }
+            let name = (item["name"] as? String) ?? summary.name
+            let version = (item["version"] as? String) ?? summary.version ?? "1.0"
+            let identifier = (item["bundleIdentifier"] as? String) ?? summary.bundleIdentifier
+            let appPayload: [String: Any] = [
+                "name": name,
+                "bundleIdentifier": identifier,
+                "version": version,
+                "downloadURL": url.absoluteString,
+                "iconURL": (item["iconURL"] as? String) ?? summary.iconURL ?? "",
+                "localizedDescription": (item["localizedDescription"] as? String) ?? "",
+                "developerName": (item["developerName"] as? String) ?? summary.developerName ?? ""
+            ]
+            // Decode through AltSourceKit, preserving its normal version and ID semantics.
+            let repositoryPayload: [String: Any] = [
+                "name": "AMARYT API · \(summary.sourceId)",
+                "identifier": "amaryt.api.\(summary.sourceId)",
+                "apps": [appPayload]
+            ]
+            let payload = try JSONSerialization.data(withJSONObject: repositoryPayload)
+            let repository = try JSONDecoder().decode(ASRepository.self, from: payload)
+            guard let app = repository.apps.first, app.currentDownloadUrl != nil else {
+                apiError = "بيانات التطبيق غير صالحة للتثبيت"
+                return
+            }
+            selectedRoute = SourceAppsView.SourceAppRoute(
+                sourceURL: AMARYTCatalogAPI.baseURL, source: repository, app: app
+            )
+            apiError = nil
+        } catch {
+            apiError = "تعذر فتح تفاصيل التطبيق: \(error.localizedDescription)"
         }
     }
 
