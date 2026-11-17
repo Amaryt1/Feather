@@ -310,7 +310,7 @@ private struct NewAppFeatureCard: View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         let material = shape
             .fill(.ultraThinMaterial.opacity(0.50))
-            .environment(\\.colorScheme, .dark)
+            .environment(\.colorScheme, .dark)
 
         return material.overlay(
             shape.fill(Color.black.opacity(0.035))
