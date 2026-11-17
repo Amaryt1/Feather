@@ -205,6 +205,8 @@ struct SourceAppsDetailView: View {
 				}
 			}())
 		}
+		.flexibleHeaderScrollView()
+		.shouldSetInset()
 		.task(id: "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)") {
             relatedApps = []
             isLoadingRelatedApps = true
@@ -213,8 +215,6 @@ struct SourceAppsDetailView: View {
             relatedApps = results
             isLoadingRelatedApps = false
         }
-		.flexibleHeaderScrollView()
-		.shouldSetInset()
 		.toolbar {
 			NBToolbarButton(
 				systemImage: "square.and.arrow.up",
