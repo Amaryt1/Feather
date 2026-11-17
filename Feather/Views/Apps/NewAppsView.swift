@@ -346,7 +346,7 @@ private struct NewAppFeatureCard: View {
     private var metadataRow: some View {
         HStack(spacing: 8) {
             Label(
-                app.currentVersion.map { "v\\($0)" } ?? "الإصدار غير محدد",
+                app.currentVersion.map { "v\($0)" } ?? "الإصدار غير محدد",
                 systemImage: "tag"
             )
 
