@@ -1418,10 +1418,38 @@ private struct AppsCatalogRecentUpdatesView: View {
         }
     }
 
+    // A feed app can also be published by the catalog API. Keep one visible
+    // update per app name and version, without merging differently named mods.
+    private func updateIdentity(_ row: UpdateRow) -> String {
+        let name: String
+        let version: String
+        switch row {
+        case .source(let entry):
+            name = entry.app.currentName
+            version = entry.app.currentVersion ?? ""
+        case .api(let app):
+            name = app.name
+            version = app.version ?? ""
+        }
+        let normalizedName = name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return normalizedName + "|" + version.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var rows: [UpdateRow] {
         let api = recentManifest == nil ? apiEntries : recentApps
-        return (entries.map { UpdateRow.source($0) } + api.map { UpdateRow.api($0) })
-            .sorted { $0.date > $1.date }
+        // Prefer the native Feather source when the same version is in both.
+        // Stable sorting also keeps original source order for equal dates.
+        let combined = (entries.map { UpdateRow.source($0) } + api.map { UpdateRow.api($0) })
+            .enumerated()
+            .sorted { left, right in
+                if left.element.date != right.element.date { return left.element.date > right.element.date }
+                return left.offset < right.offset
+            }
+            .map(\.element)
+        var seen = Set<String>()
+        return combined.filter { seen.insert(updateIdentity($0)).inserted }
     }
 
     private func loadNextPage() async {
@@ -1490,43 +1518,59 @@ private struct AppsCatalogRecentUpdatesView: View {
                                                 .font(.caption2.monospaced())
                                         }
                                         .foregroundStyle(.secondary)
-                                        Button { openAPI(app) } label: {
-                                            VStack(alignment: .leading, spacing: 11) {
-                                                ZStack {
-                                                    RoundedRectangle(cornerRadius: 18)
-                                                        .fill(Color(uiColor: .tertiarySystemGroupedBackground))
-                                                    if let icon = app.iconURL, let url = URL(string: icon) {
-                                                        AsyncImage(url: url) { image in
-                                                            image.resizable().scaledToFit()
-                                                        } placeholder: {
-                                                            Image(systemName: "app.fill")
-                                                                .foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 11) {
+                                            Button { openAPI(app) } label: {
+                                                VStack(alignment: .leading, spacing: 10) {
+                                                    ZStack(alignment: .topTrailing) {
+                                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                                            .fill(LinearGradient(
+                                                                colors: [Color.accentColor.opacity(0.22), Color(uiColor: .secondarySystemBackground)],
+                                                                startPoint: .topLeading, endPoint: .bottomTrailing
+                                                            ))
+                                                        if let icon = app.iconURL, let url = URL(string: icon) {
+                                                            AsyncImage(url: url) { image in
+                                                                image.resizable().scaledToFit()
+                                                            } placeholder: {
+                                                                Image("App_Unknown").resizable().scaledToFit().padding(18)
+                                                            }
+                                                            .frame(width: 76, height: 76)
+                                                            .clipShape(RoundedRectangle(cornerRadius: 18))
                                                         }
-                                                        .frame(width: 76, height: 76)
-                                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                                        Image(systemName: "arrow.up.right")
+                                                            .font(.caption.weight(.bold))
+                                                            .foregroundStyle(.secondary)
+                                                            .padding(9)
+                                                            .background(.thinMaterial, in: Circle())
+                                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                                                            .padding(9)
                                                     }
-                                                }
-                                                .frame(height: 124)
-                                                Text(app.name).font(.headline).foregroundStyle(.primary)
-                                                Text(app.subtitle ?? "")
-                                                    .font(.caption).foregroundStyle(.secondary)
-                                                    .lineLimit(2)
-                                                HStack {
-                                                    Text("الحصول")
-                                                        .font(.subheadline.weight(.semibold))
-                                                        .foregroundStyle(.blue)
-                                                        .padding(.horizontal, 18).padding(.vertical, 7)
-                                                        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: Capsule())
-                                                    Spacer()
-                                                    Text(app.version.map { "v\($0)" } ?? "")
-                                                        .font(.caption2).foregroundStyle(.secondary)
+                                                    .frame(height: 126)
+                                                    VStack(alignment: .leading, spacing: 4) {
+                                                        Text(app.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
+                                                        Text(app.subtitle ?? "تطبيق")
+                                                            .font(.caption).foregroundStyle(.secondary)
+                                                            .lineLimit(2).frame(height: 34, alignment: .topLeading)
+                                                    }
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
                                                 }
                                             }
-                                            .padding(14)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+                                            .buttonStyle(.plain)
+                                            HStack(spacing: 8) {
+                                                Image(systemName: "sparkles").font(.caption2).foregroundStyle(.secondary)
+                                                Text(app.version.map { "v\($0)" } ?? "Feather Store")
+                                                    .font(.caption2).foregroundStyle(.secondary)
+                                                Spacer(minLength: 2)
+                                                Button { openAPI(app) } label: {
+                                                    Text("الحصول")
+                                                        .font(.subheadline.weight(.semibold))
+                                                        .padding(.horizontal, 18).padding(.vertical, 7)
+                                                        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: Capsule())
+                                                }
+                                                .buttonStyle(.borderless)
+                                            }
                                         }
-                                        .buttonStyle(.plain)
+                                        .padding(11)
+                                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
                                     }
                                 }
                             }
