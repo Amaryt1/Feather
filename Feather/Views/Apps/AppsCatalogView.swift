@@ -1348,15 +1348,8 @@ struct AppsCatalogView: View {
     private var catalogControls: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("التطبيقات: \(catalogEntries.count + (apiManifest?.totalApps ?? apiApps.count))")
+                Text("التطبيقات والألعاب: \(catalogEntries.count + (apiManifest?.totalApps ?? apiApps.count))")
                     .font(.subheadline.monospacedDigit())
-                if let manifest = apiManifest {
-                    Text("المصادر: \(catalogEntries.count) · API: \(manifest.totalApps)")
-                        .font(.caption2.monospacedDigit())
-                } else if apiLoading {
-                    Text("جارٍ قراءة إجمالي تطبيقات API…")
-                        .font(.caption2)
-                }
             }
             .foregroundStyle(.secondary)
             .accessibilityLabel("عدد التطبيقات \(catalogEntries.count + (apiManifest?.totalApps ?? apiApps.count))")
