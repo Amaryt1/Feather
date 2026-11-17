@@ -1277,7 +1277,7 @@ struct AppsCatalogView: View {
             ]
             // Decode through AltSourceKit, preserving its normal version and ID semantics.
             let repositoryPayload: [String: Any] = [
-                "name": "AMARYT API · \(summary.sourceId)",
+                "name": "AMARYT",
                 "identifier": "amaryt.api.\(summary.sourceId)",
                 "apps": [appPayload]
             ]
