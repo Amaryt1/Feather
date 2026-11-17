@@ -31,6 +31,8 @@ class Download: ObservableObject, Identifiable, @unchecked Sendable {
 	let fileName: String
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
+    var directInstall = false
+    var importedUUID: String?
 	
 	init(
 		id: String,
@@ -193,6 +195,9 @@ extension DownloadManager: URLSessionDownloadDelegate {
 	
 	func handlePachageFile(url: URL, dl: Download) throws {
 		FR.handlePackageFile(url, download: dl) { err in
+            if err == nil, dl.directInstall, let uuid = dl.importedUUID {
+                NotificationCenter.default.post(name: Notification.Name("Feather.directInstallImported"), object: uuid)
+            }
 			if err != nil {
 				let generator = UINotificationFeedbackGenerator()
 				generator.notificationOccurred(.error)
