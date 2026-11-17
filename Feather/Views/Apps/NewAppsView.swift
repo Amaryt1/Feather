@@ -291,11 +291,11 @@ private struct NewAppFeatureCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(app.currentName)
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white)
 
                 Text(appDescription)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.88))
                     .lineLimit(3)
             }
 
@@ -303,9 +303,17 @@ private struct NewAppFeatureCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(
-            accent.opacity(0.07),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .background(tabletInfoBackground)
+    }
+
+    private var tabletInfoBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        let material = shape
+            .fill(.ultraThinMaterial.opacity(0.50))
+            .environment(\\.colorScheme, .dark)
+
+        return material.overlay(
+            shape.fill(Color.black.opacity(0.035))
         )
     }
 
