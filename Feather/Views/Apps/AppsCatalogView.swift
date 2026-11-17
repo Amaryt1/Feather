@@ -846,6 +846,8 @@ struct AppsCatalogView: View {
         }
     }
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = AppsCatalogMemoryCache.shared.index?.repositories ?? []
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
@@ -865,6 +867,14 @@ struct AppsCatalogView: View {
     @State private var recentlyUpdatedEntries: [AppsCatalogEntry] = AppsCatalogMemoryCache.shared.index.map { Self.recentUpdates(in: $0.entries) } ?? []
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
+
+    // Keep exactly two full-width columns on iPad while preserving the adaptive iPhone layout.
+    private var catalogGridColumns: [GridItem] {
+        if horizontalSizeClass == .regular {
+            return Array(repeating: GridItem(.flexible(), spacing: 16), count: 2)
+        }
+        return [GridItem(.adaptive(minimum: 158), spacing: 12)]
+    }
 
     /// Build the seven-day shelf only when the catalog index changes, not on every
     /// SwiftUI body refresh, so large catalogs remain responsive.
@@ -1093,7 +1103,7 @@ struct AppsCatalogView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 158), spacing: 12)], spacing: 14) {
+                        LazyVGrid(columns: catalogGridColumns, spacing: 16) {
                             ForEach(filteredEntries) { entry in
                                 AppsCatalogPremiumCard(entry: entry) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
