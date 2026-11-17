@@ -1,0 +1,40 @@
+name: Build experimental sharded apps catalog
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate builders
+        run: python -m py_compile scripts/build_private_apps_catalog.py scripts/build_private_apps_catalog_v2.py
+      - name: Build AppTesters paged catalog in CI
+        env:
+          AMARYT_ENABLE_APPTESTERS: '1'
+        run: python scripts/build_private_apps_catalog_v2.py
+      - name: Verify manifest and page hashes
+        run: |
+          python - <<'PY'
+          import gzip,hashlib,json,pathlib
+          root=pathlib.Path('catalogs/private-apps/v2')
+          m=json.loads((root/'manifest.json').read_text())
+          assert m['schemaVersion']==2
+          assert len(m['sources'])==3
+          for src in m['sources']:
+              total=0
+              for page in src['pages']:
+                  blob=(root/(page['sha256']+'.json.gz')).read_bytes()
+                  assert hashlib.sha256(blob).hexdigest()==page['sha256']
+                  payload=json.loads(gzip.decompress(blob))
+                  assert payload['sourceURL']==src['sourceURL']
+                  assert len(payload['repository']['apps'])<=250
+                  total+=len(payload['repository']['apps'])
+              assert total==src['appCount']
+          print('All catalog pages validated')
+          PY
