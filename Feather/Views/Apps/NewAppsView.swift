@@ -155,6 +155,20 @@ private struct NewAppFeatureCard: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var accent: Color { sampledColor ?? app.tintColor ?? Color.accentColor }
 
+    private var bannerMaskGradient: LinearGradient {
+        let stops: [Gradient.Stop] = [
+            Gradient.Stop(color: Color.clear, location: 0.0),
+            Gradient.Stop(color: Color.black, location: 0.32),
+            Gradient.Stop(color: Color.black, location: 1.0)
+        ]
+        let gradient = Gradient(stops: stops)
+        return LinearGradient(
+            gradient: gradient,
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     var body: some View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 0) {
@@ -234,15 +248,7 @@ private struct NewAppFeatureCard: View {
                                 Rectangle().fill(Color.black.opacity(0.035))
                             }
                             .mask {
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: .clear, location: 0),
-                                        .init(color: .black, location: 0.32),
-                                        .init(color: .black, location: 1)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
+                                bannerMaskGradient
                             }
                     }
                 }
