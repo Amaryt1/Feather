@@ -194,11 +194,6 @@ private struct NewAppFeatureCard: View {
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             bannerSection
-
-            if horizontalSizeClass == .regular {
-                tabletAppInfo
-            }
-
             metadataRow
         }
         .padding(11)
@@ -206,6 +201,21 @@ private struct NewAppFeatureCard: View {
     }
 
     private var bannerSection: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                bannerContent
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            } else {
+                bannerContent
+                    .frame(height: 205)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+    }
+
+    private var bannerContent: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 23, style: .continuous)
                 .fill(bannerPlaceholderGradient)
@@ -218,14 +228,8 @@ private struct NewAppFeatureCard: View {
                 endPoint: .bottom
             )
 
-            if horizontalSizeClass != .regular {
-                compactAppInfo
-            }
+            compactAppInfo
         }
-        .frame(height: horizontalSizeClass == .regular ? 260 : 205)
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
     }
 
     private var bannerPlaceholderGradient: LinearGradient {
@@ -245,7 +249,12 @@ private struct NewAppFeatureCard: View {
         if let bannerURL = app.bannerURL {
             LazyImage(url: bannerURL) { state in
                 if let image = state.image {
-                    image.resizable().aspectRatio(contentMode: .fill)
+                    image
+                        .resizable()
+                        .aspectRatio(
+                            contentMode: horizontalSizeClass == .regular ? .fit : .fill
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     bannerFallback
                 }
@@ -257,7 +266,10 @@ private struct NewAppFeatureCard: View {
 
     private var compactAppInfo: some View {
         HStack(spacing: 10) {
-            appIcon(size: 58, cornerRadius: 15)
+            appIcon(
+                size: horizontalSizeClass == .regular ? 64 : 58,
+                cornerRadius: horizontalSizeClass == .regular ? 16 : 15
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(app.currentName)
@@ -282,39 +294,6 @@ private struct NewAppFeatureCard: View {
         .padding(.horizontal, 15)
         .padding(.vertical, 12)
         .background(bannerInfoBackground)
-    }
-
-    private var tabletAppInfo: some View {
-        HStack(spacing: 12) {
-            appIcon(size: 64, cornerRadius: 16)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(app.currentName)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-
-                Text(appDescription)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(3)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(tabletInfoBackground)
-    }
-
-    private var tabletInfoBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        let material = shape
-            .fill(.ultraThinMaterial.opacity(0.16))
-            .environment(\.colorScheme, .dark)
-
-        return material.overlay(
-            shape.fill(Color.black.opacity(0.012))
-        )
     }
 
     private var appDescription: String {
