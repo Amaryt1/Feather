@@ -901,6 +901,30 @@ struct AppsCatalogView: View {
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
 
+    // API pages are paginated; include only fetched entries with a genuine recent date.
+    private var recentAPIApps: [AMARYTCatalogAPI.AppSummary] {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-7 * 24 * 60 * 60)
+        return apiApps.filter {
+            guard let date = Self.apiVersionDate($0.versionDate) else { return false }
+            return date >= cutoff && date <= now
+        }.sorted {
+            (Self.apiVersionDate($0.versionDate) ?? .distantPast) >
+            (Self.apiVersionDate($1.versionDate) ?? .distantPast)
+        }
+    }
+
+    private static func apiVersionDate(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: raw) { return date }
+        iso.formatOptions = [.withInternetDateTime]
+        if let date = iso.date(from: raw) { return date }
+        iso.formatOptions = [.withFullDate]
+        return iso.date(from: String(raw.prefix(10)))
+    }
+
     // Keep exactly two full-width columns on iPad while preserving the adaptive iPhone layout.
     private var catalogGridColumns: [GridItem] {
         if horizontalSizeClass == .regular {
@@ -1206,8 +1230,8 @@ struct AppsCatalogView: View {
                     Button { isRecentUpdatesPresented = true } label: {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .overlay(alignment: .topTrailing) {
-                                if !recentlyUpdatedEntries.isEmpty {
-                                    Text(recentlyUpdatedEntries.count > 99 ? "99+" : "\(recentlyUpdatedEntries.count)")
+                                if !recentlyUpdatedEntries.isEmpty || !recentAPIApps.isEmpty {
+                                    Text(recentlyUpdatedEntries.count + recentAPIApps.count > 99 ? "99+" : "\(recentlyUpdatedEntries.count + recentAPIApps.count)")
                                         .font(.system(size: 9, weight: .bold, design: .rounded))
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 4)
@@ -1218,7 +1242,7 @@ struct AppsCatalogView: View {
                                 }
                             }
                     }
-                    .accessibilityLabel("التحديثات الأخيرة، \(recentlyUpdatedEntries.count) تطبيق")
+                    .accessibilityLabel("التحديثات الأخيرة، \(recentlyUpdatedEntries.count + recentAPIApps.count) تطبيق")
 
                 }
             }
@@ -1226,7 +1250,10 @@ struct AppsCatalogView: View {
                 AppsCatalogDownloadsView()
             }
             .sheet(isPresented: $isRecentUpdatesPresented) {
-                AppsCatalogRecentUpdatesView(entries: recentlyUpdatedEntries) { entry in
+                AppsCatalogRecentUpdatesView(entries: recentlyUpdatedEntries, apiEntries: recentAPIApps, openAPI: { app in
+                    isRecentUpdatesPresented = false
+                    Task { await openAPIApp(app) }
+                }) { entry in
                     selectedRoute = SourceAppsView.SourceAppRoute(
                         sourceURL: entry.sourceURL, source: entry.source, app: entry.app
                     )
@@ -1352,6 +1379,8 @@ struct AppsCatalogView: View {
 
 private struct AppsCatalogRecentUpdatesView: View {
     let entries: [AppsCatalogEntry]
+    let apiEntries: [AMARYTCatalogAPI.AppSummary]
+    let openAPI: (AMARYTCatalogAPI.AppSummary) -> Void
     let open: (AppsCatalogEntry) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -1359,7 +1388,7 @@ private struct AppsCatalogRecentUpdatesView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if entries.isEmpty {
+                if entries.isEmpty && apiEntries.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "checkmark.seal")
                             .font(.system(size: 36))
@@ -1376,6 +1405,24 @@ private struct AppsCatalogRecentUpdatesView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 14) {
+                            ForEach(apiEntries) { app in
+                                Button {
+                                    openAPI(app)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(app.name).font(.headline)
+                                            Text("AMARYT · v\(app.version ?? "—")")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.left").foregroundStyle(.secondary)
+                                    }
+                                    .padding(12)
+                                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                                }
+                                .buttonStyle(.plain)
+                            }
                             ForEach(entries) { entry in
                                 VStack(alignment: .leading, spacing: 7) {
                                     HStack(spacing: 6) {
