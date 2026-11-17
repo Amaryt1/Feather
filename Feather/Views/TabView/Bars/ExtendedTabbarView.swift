@@ -69,7 +69,7 @@ struct ExtendedTabbarView: View {
 				}
 			}
 			.defaultVisibility(.hidden, for: .tabBar)
-			.hidden(horizontalSizeClass == .compact)
+			.hidden(horizontalSizeClass != .compact)
 		}
 		.tabViewStyle(.sidebarAdaptable)
 		.tabViewCustomization($customization)
