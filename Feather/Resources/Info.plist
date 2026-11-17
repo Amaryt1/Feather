@@ -132,7 +132,7 @@
 		<string>audio</string>
 	</array>
 	<key>UIFileSharingEnabled</key>
-	<true/>
+	<false/>
 	<key>UILaunchScreen</key>
 	<false/>
 	<key>UTExportedTypeDeclarations</key>
