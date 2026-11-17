@@ -36,9 +36,8 @@ struct NewAppsView: View {
                             }
                         }
                         .padding(16)
-                        // Keep the New section at a phone-like content width on iPad.
-                        // The outer frame centers the column without changing iPhone sizing.
-                        .frame(maxWidth: 430)
+                        // Fill the content area offered by the parent layout.
+                        // Any iPad category/sidebar column remains managed by the parent view.
                         .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .refreshable { await loadRepository() }
@@ -153,6 +152,7 @@ private struct NewAppFeatureCard: View {
     let open: () -> Void
 
     @State private var sampledColor: Color?
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var accent: Color { sampledColor ?? app.tintColor ?? Color.accentColor }
 
     var body: some View {
@@ -244,7 +244,9 @@ private struct NewAppFeatureCard: View {
                             }
                     }
                 }
-                .frame(height: 205)
+                .frame(height: horizontalSizeClass == .regular ? 260 : 205)
+                .frame(maxWidth: .infinity)
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
 
                 HStack(spacing: 8) {
