@@ -1176,6 +1176,7 @@ struct AppsCatalogView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
+                        .padding(.bottom, 24)
                         if let manifest = apiManifest, apiNextPage < manifest.pageCount {
                             Button(apiLoading ? "جارٍ التحميل…" : "تحميل 50 تطبيقًا إضافيًا من API") {
                                 Task { await loadAPIPage() }
@@ -1189,7 +1190,6 @@ struct AppsCatalogView: View {
                                 Task { await loadAPIPage() }
                             }
                         }
-                        .padding(.bottom, 24)
                     }
                     .refreshable {
                         await loadPrivateFeeds(force: true)
