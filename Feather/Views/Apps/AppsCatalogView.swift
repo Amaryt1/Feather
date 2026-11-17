@@ -1029,6 +1029,7 @@ struct AppsCatalogView: View {
     }
 
     private func apply(_ index: AppsCatalogIndex) {
+        displayedEntryLimit = catalogPageSize
         repositories = index.repositories
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
