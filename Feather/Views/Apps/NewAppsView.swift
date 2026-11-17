@@ -169,6 +169,18 @@ private struct NewAppFeatureCard: View {
         )
     }
 
+    private var bannerInfoBackground: some View {
+        let material = Rectangle()
+            .fill(.ultraThinMaterial.opacity(0.50))
+            .environment(\.colorScheme, .dark)
+
+        let overlay = material.overlay(
+            Rectangle().fill(Color.black.opacity(0.035))
+        )
+
+        return overlay.mask(bannerMaskGradient)
+    }
+
     var body: some View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: 0) {
@@ -240,17 +252,7 @@ private struct NewAppFeatureCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 12)
-                    .background {
-                        Rectangle()
-                            .fill(.ultraThinMaterial.opacity(0.50))
-                            .environment(\.colorScheme, .dark)
-                            .overlay {
-                                Rectangle().fill(Color.black.opacity(0.035))
-                            }
-                            .mask {
-                                bannerMaskGradient
-                            }
-                    }
+                    .background(bannerInfoBackground)
                 }
                 .frame(height: horizontalSizeClass == .regular ? 260 : 205)
                 .frame(maxWidth: .infinity)
