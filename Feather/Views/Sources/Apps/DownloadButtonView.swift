@@ -14,6 +14,7 @@ struct DownloadButtonView: View {
 	let sourceURL: URL?
 	let source: ASRepository?
 	let app: ASRepository.App
+    var opensDetails = false
 	@ObservedObject private var downloadManager = DownloadManager.shared
 
 	@State private var downloadProgress: Double = 0
@@ -40,7 +41,14 @@ struct DownloadButtonView: View {
 					}
 				}
 				.compatTransition()
-			} else {
+			} else if opensDetails, let source {
+                NavigationLink {
+                    SourceAppsDetailView(sourceURL: sourceURL, source: source, app: app)
+                } label: {
+                    getLabel
+                }
+                .buttonStyle(.borderless)
+            } else {
 				Button {
 					if let url = app.currentDownloadUrl {
 						_ = downloadManager.startDownload(
@@ -50,14 +58,8 @@ struct DownloadButtonView: View {
 						)
 					}
 				} label: {
-					Text(.localized("Get"))
-						.lineLimit(0)
-						.font(.headline.bold())
-						.foregroundStyle(Color.accentColor)
-						.padding(.horizontal, 24)
-						.padding(.vertical, 6)
-						.modifier(DownloadActionSurface())
-				}
+                    getLabel
+                }
 				.buttonStyle(.borderless)
 				.compatTransition()
 			}
@@ -69,6 +71,16 @@ struct DownloadButtonView: View {
 		}
 		.animation(.easeInOut(duration: 0.3), value: downloadManager.getDownload(by: app.currentUniqueId) != nil)
 	}
+
+    private var getLabel: some View {
+        Text(.localized("Get"))
+            .lineLimit(0)
+            .font(.headline.bold())
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 6)
+            .modifier(DownloadActionSurface())
+    }
 
 	private func setupObserver() {
 		cancellable?.cancel()
