@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Feather's independent prebuilt catalog for its four private app feeds."""
+"""Build Feather's independent prebuilt catalog for its configured app feeds."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 FEEDS = (
+    ("AMARYT STORE", "https://raw.githubusercontent.com/Amaryt1/Mstoda/main/apps.json"),
     ("AltMaker", "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com"),
 )
 
@@ -96,8 +97,8 @@ def main() -> None:
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(FEEDS)) as executor:
         fetched = list(executor.map(fetch_repository, FEEDS))
 
-    if len(fetched) != 1:
-        raise RuntimeError("the private catalog must contain exactly one feed")
+    if len(fetched) != len(FEEDS):
+        raise RuntimeError("the private catalog must contain every configured feed")
 
     generated_at = datetime.now(timezone.utc).isoformat()
     sources = []
@@ -140,7 +141,7 @@ def main() -> None:
 
     # Validate the exact gzip artifact before publishing either output.
     decoded = json.loads(gzip.decompress(compressed).decode("utf-8"))
-    if decoded.get("schemaVersion") != 1 or len(decoded.get("sources", [])) != 1:
+    if decoded.get("schemaVersion") != 1 or len(decoded.get("sources", [])) != len(FEEDS):
         raise RuntimeError("generated catalog failed its schema/source validation")
     for source in decoded["sources"]:
         repository = source.get("repository")
@@ -163,7 +164,7 @@ def main() -> None:
         "sha256": digest,
         "compressedBytes": len(compressed),
         "uncompressedBytes": len(serialized),
-        "sourceCount": 1,
+        "sourceCount": len(FEEDS),
         "appCount": app_count,
         "sources": source_summary,
     }
@@ -179,7 +180,7 @@ def main() -> None:
     atomic_write(MANIFEST_OUTPUT, manifest_bytes)
 
 
-    print("Private single-feed catalog generated successfully.")
+    print("Private catalog generated successfully.")
     print(f"Sources: {len(sources)}")
     print(f"App records (before conservative UI deduplication): {app_count:,}")
     print(f"Uncompressed size: {len(serialized):,} bytes")

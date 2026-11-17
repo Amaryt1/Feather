@@ -43,7 +43,7 @@ jobs:
       - name: Compile catalog builder
         run: python -m py_compile scripts/build_private_apps_catalog.py
 
-      - name: Verify the single configured feed and external catalog location
+      - name: Verify both configured feeds and external catalog location
         run: |
           python - <<'PY'
           import importlib.util
@@ -55,16 +55,22 @@ jobs:
           module = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
 
-          assert len(module.FEEDS) == 1, module.FEEDS
-          assert len({url for _, url in module.FEEDS}) == 1
-          assert module.FEEDS[0][0] == "AltMaker"
-          assert module.FEEDS[0][1] == "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com"
+          assert dict(module.FEEDS) == {
+              "AltMaker": "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com",
+              "AMARYT STORE": "https://raw.githubusercontent.com/Amaryt1/Mstoda/main/apps.json",
+          }, module.FEEDS
+          assert len({url for _, url in module.FEEDS}) == 2
+          from pathlib import Path
+          swift = Path("Feather/Views/Apps/AppsCatalogView.swift").read_text()
+          feed_block = swift.split("privateFeedURLs: [URL] = [", 1)[1].split("]", 1)[0]
+          import re
+          assert set(re.findall(r'URL\(string: "([^"]+)"\)', feed_block)) == {url for _, url in module.FEEDS}
           assert module.CATALOG_OUTPUT.as_posix().startswith("catalogs/private-apps/")
           assert not module.CATALOG_OUTPUT.as_posix().startswith("Feather/Resources/")
-          print("The single AltMaker feed and external catalog location are verified.")
+          print("The AltMaker and Mstoda feeds and external catalog location are verified.")
           PY
 
-      - name: Build and validate a live AltMaker snapshot
+      - name: Build and validate a live AltMaker and Mstoda snapshot
         run: python scripts/build_private_apps_catalog.py
 
   build:

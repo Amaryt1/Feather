@@ -1,4 +1,4 @@
-name: Refresh private single-feed apps catalog
+name: Refresh private combined apps catalog
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: refresh-private-single-feed-catalog
+  group: refresh-private-combined-catalog
   cancel-in-progress: false
 
 jobs:
@@ -32,19 +32,19 @@ jobs:
       - name: Validate builder syntax
         run: python -m py_compile scripts/build_private_apps_catalog.py
 
-      - name: Build and validate the single-feed catalog
+      - name: Build and validate the combined catalog
         run: python scripts/build_private_apps_catalog.py
 
       - name: Commit catalog snapshot when changed
         run: |
           git add catalogs/private-apps/catalog.json.gz catalogs/private-apps/manifest.json 
           if git diff --cached --quiet; then
-            echo "Private single-feed catalog is already up to date."
+            echo "Private combined catalog is already up to date."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Refresh bundled private single-feed apps catalog"
+          git commit -m "Refresh bundled private combined apps catalog"
           target_branch="${GITHUB_REF_NAME}"
           git fetch origin "$target_branch"
           git rebase "origin/$target_branch"

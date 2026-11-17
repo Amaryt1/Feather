@@ -645,7 +645,8 @@ private final class AppsCatalogMemoryCache {
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
     nonisolated private static let privateFeedURLs: [URL] = [
-        URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!
+        URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!,
+        URL(string: "https://raw.githubusercontent.com/Amaryt1/Mstoda/main/apps.json")!
     ]
     nonisolated private static let privateCatalogManifestURL = URL(
         string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/manifest.json"
@@ -949,7 +950,7 @@ struct AppsCatalogView: View {
         }
 
         // Compatibility fallback: if the generated catalog is not published or
-        // temporarily unreachable, retain the existing four-feed loading path.
+        // temporarily unreachable, retain the configured feed loading path.
         guard !hasLoaded else {
             isLoading = false
             return
