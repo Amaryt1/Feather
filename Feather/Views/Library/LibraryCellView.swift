@@ -193,9 +193,11 @@ extension LibraryCellView {
 			Button(.localized("Re-sign"), systemImage: "signature") {
 				selectedSigningAppPresenting = AnyApp(base: app)
 			}
-			Button(.localized("Export"), systemImage: "square.and.arrow.up") {
-				selectedInstallAppPresenting = AnyApp(base: app, archive: true)
-			}
+			if Storage.shared.sourceMetadata(for: app) == nil {
+                Button(.localized("Export"), systemImage: "square.and.arrow.up") {
+                    selectedInstallAppPresenting = AnyApp(base: app, archive: true)
+                }
+            }
 		} else {
 			Button(.localized("Install"), systemImage: "square.and.arrow.down") {
 				selectedInstallAppPresenting = AnyApp(base: app)
