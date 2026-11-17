@@ -107,11 +107,6 @@ struct AppsCatalogHistoryView: View {
                                      ? "الملف موجود على الجهاز"
                                      : "تم نقل الملف أو حذفه")
                                     .font(.caption2).foregroundStyle(.secondary)
-                                if FileManager.default.fileExists(atPath: record.localPath) {
-                                    ShareLink(item: record.localURL) {
-                                        Label("مشاركة الملف", systemImage: "square.and.arrow.up")
-                                    }
-                                }
                             }
                             .padding(.vertical, 4)
                             .swipeActions {
