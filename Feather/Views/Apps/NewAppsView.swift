@@ -309,11 +309,11 @@ private struct NewAppFeatureCard: View {
     private var tabletInfoBackground: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         let material = shape
-            .fill(.ultraThinMaterial.opacity(0.50))
+            .fill(.ultraThinMaterial.opacity(0.16))
             .environment(\.colorScheme, .dark)
 
         return material.overlay(
-            shape.fill(Color.black.opacity(0.035))
+            shape.fill(Color.black.opacity(0.012))
         )
     }
 
