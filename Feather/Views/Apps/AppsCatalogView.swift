@@ -881,6 +881,14 @@ struct AppsCatalogView: View {
     @State private var sortOption: AppsCatalogSort = .recommended
     @State private var isDownloadsPresented = false
     @State private var isRecentUpdatesPresented = false
+    // Remote API entries are loaded incrementally, without importing giant source files.
+    @State private var apiManifest: AMARYTCatalogAPI.Manifest?
+    @State private var apiApps: [AMARYTCatalogAPI.AppSummary] = []
+    @State private var apiNextPage = 0
+    @State private var apiLoading = false
+    @State private var apiError: String?
+    @State private var selectedAPIApp: AMARYTCatalogAPI.AppSummary?
+
 
     // Build the catalog index once when repositories change. Rebuilding this
     // 27k-app index from body-computed properties made every category redraw
@@ -1128,6 +1136,36 @@ struct AppsCatalogView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: catalogGridColumns, spacing: 16) {
+                            ForEach(apiApps.filter { searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) }) { app in
+                                Button { selectedAPIApp = app } label: {
+                                    VStack(alignment: .leading, spacing: 9) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 20).fill(Color.accentColor.opacity(0.12))
+                                            if let icon = app.iconURL, let url = URL(string: icon) {
+                                                AsyncImage(url: url) { image in
+                                                    image.resizable().scaledToFit()
+                                                } placeholder: {
+                                                    Image(systemName: "app").foregroundStyle(.secondary)
+                                                }
+                                                .frame(width: 76, height: 76)
+                                                .clipShape(RoundedRectangle(cornerRadius: 18))
+                                            }
+                                        }
+                                        .frame(height: 126)
+                                        Text(app.name).font(.headline).lineLimit(1)
+                                        Text(app.subtitle ?? app.sourceId).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        HStack {
+                                            Text(app.version.map { "v\($0)" } ?? "API").font(.caption2)
+                                            Spacer()
+                                            Text("التفاصيل").font(.caption)
+                                        }
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .padding(11)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+                                }
+                                .buttonStyle(.plain)
+                            }
                             ForEach(filteredEntries) { entry in
                                 AppsCatalogPremiumCard(entry: entry) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
@@ -1138,6 +1176,19 @@ struct AppsCatalogView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
+                        if let manifest = apiManifest, apiNextPage < manifest.pageCount {
+                            Button(apiLoading ? "جارٍ التحميل…" : "تحميل 50 تطبيقًا إضافيًا من API") {
+                                Task { await loadAPIPage() }
+                            }
+                            .disabled(apiLoading)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                        }
+                        if let apiError {
+                            Button("إعادة محاولة تحميل API: \(apiError)") {
+                                Task { await loadAPIPage() }
+                            }
+                        }
                         .padding(.bottom, 24)
                     }
                     .refreshable {
@@ -1173,6 +1224,9 @@ struct AppsCatalogView: View {
 
                 }
             }
+            .sheet(item: $selectedAPIApp) { app in
+                AMARYTCatalogAppDetailView(app: app)
+            }
             .sheet(isPresented: $isDownloadsPresented) {
                 AppsCatalogDownloadsView()
             }
@@ -1191,20 +1245,34 @@ struct AppsCatalogView: View {
         .task {
             _ = AppsCatalogPersonalization.shared
             await loadPrivateFeeds()
+            await loadAPIPage()
+        }
+    }
+
+    @MainActor
+    private func loadAPIPage() async {
+        guard !apiLoading else { return }
+        apiLoading = true
+        defer { apiLoading = false }
+        do {
+            let manifest: AMARYTCatalogAPI.Manifest
+            if let cached = apiManifest { manifest = cached }
+            else {
+                manifest = try await AMARYTCatalogAPI.fetchManifest()
+                apiManifest = manifest
+            }
+            guard apiNextPage < manifest.pageCount else { return }
+            let batch = try await AMARYTCatalogAPI.fetchPage(apiNextPage, manifest: manifest)
+            apiApps.append(contentsOf: batch)
+            apiNextPage += 1
+            apiError = nil
+        } catch {
+            apiError = error.localizedDescription
         }
     }
 
     private var catalogControls: some View {
         HStack(spacing: 10) {
-            NavigationLink {
-                AMARYTCatalogPreviewView()
-            } label: {
-                Label("كتالوج API", systemImage: "square.stack.3d.up")
-                    .font(.subheadline)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("فتح كتالوج التطبيقات من AMARYT API")
-
             Text("التطبيقات: \(catalogEntries.count)")
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -1510,5 +1578,58 @@ enum RelatedApps {
             let local = AppsCatalogIndex.build(from: [context]).entries
             return rank(app: app, candidates: local + cached)
         }.value
+    }
+}
+
+private struct AMARYTCatalogAppDetailView: View {
+    let app: AMARYTCatalogAPI.AppSummary
+    @State private var descriptionText = "جارٍ تحميل التفاصيل…"
+    @State private var downloadURL: URL?
+
+    private struct Record: Decodable {
+        let id: String
+        let localizedDescription: String?
+        let downloadURL: String?
+    }
+    private struct DetailPage: Decodable { let items: [Record] }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(app.name).font(.title2).bold()
+                    Text(descriptionText)
+                    if let downloadURL {
+                        Link("فتح رابط IPA", destination: downloadURL)
+                    }
+                    Text("التثبيت من API لم يتم ربطه بنظام Feather بعد.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("تفاصيل التطبيق")
+            .task {
+                guard let path = app.detailPath else {
+                    descriptionText = "تفاصيل التطبيق غير متاحة"
+                    return
+                }
+                do {
+                    let data = try await AMARYTCatalogAPI.fetchDetail(path)
+                    let page = try JSONDecoder().decode(DetailPage.self, from: data)
+                    guard let item = page.items.first(where: { $0.id == app.id }) else {
+                        descriptionText = "لم يتم العثور على التطبيق"
+                        return
+                    }
+                    descriptionText = item.localizedDescription ?? "لا يوجد وصف"
+                    if let raw = item.downloadURL, let url = URL(string: raw),
+                       ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
+                        downloadURL = url
+                    }
+                } catch {
+                    descriptionText = error.localizedDescription
+                }
+            }
+        }
     }
 }
