@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Run the real Swift recommendation rules with small Foundation-only fixtures."""
+from pathlib import Path
+import subprocess
+import tempfile
+
+source = Path("Feather/Views/Apps/AppsCatalogView.swift").read_text()
+category = source.split("enum AppsCatalogCategory:", 1)[1].split("private enum AppsCatalogSort:", 1)[0]
+category = "enum AppsCatalogCategory:" + category
+engine = source.split("enum RelatedApps {", 1)[1].split("    @MainActor\n    static func load", 1)[0]
+engine = "enum RelatedApps {" + engine + "}\n"
+stub = r"""
+import Foundation
+struct ASRepository {
+    struct App {
+        var name: String?
+        var id: String?
+        var category: String?
+        var subtitle: String? = nil
+        var description: String? = nil
+        var localizedDescription: String? = nil
+        var currentDownloadUrl: URL?
+        var currentDate: Stamp? = nil
+        var currentName: String { name ?? "" }
+    }
+    struct Stamp { let date: Date }
+}
+struct AppsCatalogEntry {
+    let app: ASRepository.App
+    var id: String { app.currentDownloadUrl!.absoluteString }
+}
+func app(_ name: String, _ category: String, bundle: String? = nil, description: String? = nil, suffix: String = "") -> ASRepository.App {
+    ASRepository.App(name: name, id: bundle ?? name, category: category,
+                     localizedDescription: description,
+                     currentDownloadUrl: URL(string: "https://example.com/" + (name + suffix).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!))
+}
+func related(_ target: ASRepository.App, _ candidates: [ASRepository.App], limit: Int = 8) -> [String] {
+    RelatedApps.rank(app: target, candidates: candidates.map { AppsCatalogEntry(app: $0) }, limit: limit).map { $0.app.currentName }
+}
+"""
+tests = r"""
+let tv = app("HiTV", "أفلام")
+let otherTV = app("iQTv", "أفلام", description: "مشاهدة الأفلام والمسلسلات")
+let music = app("Spotify", "Music")
+let video = app("YouTube", "Video")
+assert(related(tv, [tv, otherTV, music, video]) == ["iQTv"])
+assert(related(music, [tv, app("Deezer", "Music"), video]) == ["Deezer"])
+let pubg = app("PUBG", "Games")
+let freeFire = app("Free Fire", "Games")
+assert(related(pubg, [app("Asphalt", "Games"), freeFire, tv]) == ["Free Fire"])
+let cards = app("كملنا VIP", "العاب معدّلة")
+assert(related(cards, [app("Solitaire", "Games"), freeFire, tv]) == ["Solitaire"])
+let unrelated = app("Unidentified Tool", "Other")
+assert(related(unrelated, [tv, pubg, music]).isEmpty)
+assert(related(tv, [music]).isEmpty)
+assert(related(tv, [otherTV], limit: 0).isEmpty)
+assert(related(tv, [app("HiTV Pro", "أفلام", bundle: "HiTV"), tv]).isEmpty)
+assert(related(tv, [otherTV, app("iQTv", "أفلام", suffix: "-older")]).count == 1)
+assert(related(tv, [otherTV, app("Netflix", "Entertainment")], limit: 1).count == 1)
+let misleadingGame = app("PUBG", "Games", description: "watch movies and listen to music")
+assert(related(misleadingGame, [tv, music, freeFire]) == ["Free Fire"])
+print("PASS: movie/music separation, game genres, Arabic, self-exclusion, deduplication, limits and unknown-purpose fallback")
+"""
+with tempfile.TemporaryDirectory() as directory:
+    path = Path(directory) / "RelatedAppsTests.swift"
+    path.write_text(stub + category + engine + tests)
+    subprocess.run(["swift", str(path)], check=True)

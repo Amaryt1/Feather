@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "Feather/Views/Apps/**"
+      - "Feather/Views/Sources/Apps/Detail/**"
+      - "scripts/test_related_apps.py"
       - "Feather/Backend/AppsCatalog/**"
       - "Feather/Backend/Observable/DownloadManager.swift"
       - "AltSourceKit/**"
@@ -16,6 +18,8 @@ on:
     branches: [main]
     paths:
       - "Feather/Views/Apps/**"
+      - "Feather/Views/Sources/Apps/Detail/**"
+      - "scripts/test_related_apps.py"
       - "Feather/Backend/AppsCatalog/**"
       - "Feather/Backend/Observable/DownloadManager.swift"
       - "AltSourceKit/**"
@@ -93,6 +97,9 @@ jobs:
             sudo xcode-select -s /Applications/Xcode_26.3.0.app
           fi
           xcodebuild -version
+
+      - name: Test related app recommendations
+        run: python3 scripts/test_related_apps.py
 
       - name: Resolve Swift packages
         run: |

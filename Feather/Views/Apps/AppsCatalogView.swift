@@ -6,7 +6,7 @@ import NimbleJSON
 import NukeUI
 import SWCompression
 
-private enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
+enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
     case all, games, emulators, media, design, photography, social, productivity
     case developer, signing, jailbreak, customization, ai, education
     case utilities, finance, shopping, travel, health, navigation, news, lifestyle, sports, food, other
@@ -527,7 +527,7 @@ private enum AppsCatalogSort: String, CaseIterable {
     }
 }
 
-private struct AppsCatalogEntry: Identifiable, Sendable {
+struct AppsCatalogEntry: Identifiable, Sendable {
     let sourceURL: URL?
     let source: ASRepository
     let app: ASRepository.App
@@ -845,6 +845,25 @@ struct AppsCatalogView: View {
         } catch {
             return nil
         }
+    }
+
+    // Reuse the catalog for details opened from Apps, New, or Sources.
+    static func recommendationCatalog() async -> [AppsCatalogEntry] {
+        if let index = AppsCatalogMemoryCache.shared.index { return index.entries }
+        let snapshot: (sha256: String, contexts: [SourceAppsView.SourceRepositoryContext])?
+        if let cached = await loadCachedPrivateCatalog() {
+            snapshot = cached
+        } else {
+            snapshot = await fetchPrebuiltPrivateCatalog()
+        }
+        guard let snapshot else { return [] }
+        let index = await Task.detached(priority: .userInitiated) {
+            AppsCatalogIndex.build(from: snapshot.contexts)
+        }.value
+        // A concurrent catalog refresh may have already published a newer index.
+        if let current = AppsCatalogMemoryCache.shared.index { return current.entries }
+        AppsCatalogMemoryCache.shared.store(index, sha256: snapshot.sha256)
+        return index.entries
     }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -1357,3 +1376,128 @@ private struct AppsCatalogPremiumCard: View {
     }
 }
 
+
+// Recommendations use explicit purpose/genre signals, never random catalog entries.
+enum RelatedApps {
+    private struct Profile {
+        let category: AppsCatalogCategory
+        let topics: Set<String>
+        let name: String
+        let bundle: String
+    }
+
+    private static func normalized(_ value: String) -> String {
+        let text = value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased()
+            .replacingOccurrences(of: "أ", with: "ا")
+            .replacingOccurrences(of: "إ", with: "ا")
+            .replacingOccurrences(of: "آ", with: "ا")
+            .replacingOccurrences(of: "ة", with: "ه")
+            .replacingOccurrences(of: "ى", with: "ي")
+        return text.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    private static func contains(_ text: String, phrase: String) -> Bool {
+        (" " + text + " ").contains(" " + normalized(phrase) + " ")
+    }
+
+    // Narrow genres keep, for example, a movie service away from music players,
+    // and a card game away from racing games.
+    private static let rules: [(String, AppsCatalogCategory, [String])] = [
+        ("movies", .media, ["netflix", "hitv", "iqtv", "shahid", "شاهد", "crunchyroll", "disney", "prime video", "hulu", "movie", "movies", "tv shows", "مسلسلات", "أفلام", "افلام", "دراما"]),
+        ("music", .media, ["spotify", "soundcloud", "apple music", "deezer", "tidal", "music player", "music streaming", "مشغل موسيقى", "موسيقى", "اغاني"]),
+        ("video", .media, ["youtube", "iqtube", "twitch", "video player", "vlc", "infuse", "مشغل فيديو"]),
+        ("podcasts", .media, ["podcast", "podcasts", "بودكاست"]),
+        ("cards", .games, ["كملنا", "kammelna", "baloot", "بلوت", "card game", "card games", "poker", "solitaire", "uno"]),
+        ("board", .games, ["chess", "ludo", "monopoly", "شطرنج", "لودو", "board game", "board games"]),
+        ("racing", .games, ["asphalt", "need for speed", "real racing", "car parking", "racing", "سباق", "سباقات"]),
+        ("shooter", .games, ["pubg", "fortnite", "call of duty", "free fire", "shooter", "battle royale", "ببجي", "فري فاير", "اطلاق النار"]),
+        ("football", .games, ["efootball", "fc mobile", "fifa mobile", "dream league soccer", "football manager", "لعبة كرة قدم"]),
+        ("puzzle", .games, ["candy crush", "royal match", "homescapes", "sudoku", "puzzle", "ألغاز", "الغاز"]),
+        ("strategy", .games, ["clash of clans", "clash royale", "hay day", "strategy game", "strategy games", "استراتيجية"]),
+        ("sandbox", .games, ["minecraft", "roblox", "terraria", "sandbox", "ماينكرافت"]),
+        ("fighting", .games, ["shadow fight", "mortal kombat", "tekken", "street fighter", "fighting game", "قتال"]),
+        ("adventure", .games, ["gta", "grand theft auto", "bully", "adventure game", "adventure games", "مغامرات"]),
+        ("simulation", .games, ["the sims", "simcity", "stardew valley", "simulation", "محاكاة"]),
+        ("rpg", .games, ["genshin impact", "honkai", "role playing", "rpg"]),
+        ("platformer", .games, ["subway surfers", "temple run", "geometry dash", "platformer", "endless runner"]),
+        ("messaging", .social, ["telegram", "iqtele", "iqswift", "swiftgram", "whatsapp", "signal", "messenger", "مراسلة", "مراسلات"]),
+        ("social-feed", .social, ["instagram", "iqgram", "facebook", "iqface", "twitter", "tiktok", "snapchat"])
+    ]
+
+    private static func profile(_ app: ASRepository.App) -> Profile {
+        let name = normalized(app.currentName)
+        let headline = normalized([app.currentName, app.category ?? ""].joined(separator: " "))
+        let details = normalized([app.subtitle, app.description, app.localizedDescription].compactMap { $0 }.joined(separator: " "))
+        var category = AppsCatalogCategory.classify(app)
+        var topics = Set<String>()
+        // An explicit game classification wins over incidental media words.
+        for (topic, group, phrases) in rules {
+            guard category == .other || category == group else { continue }
+            if phrases.contains(where: { contains(headline, phrase: $0) }) {
+                category = group
+                topics.insert(topic)
+            }
+        }
+        // Only consult prose when title/category provided no narrower purpose.
+        if topics.isEmpty {
+            for (topic, group, phrases) in rules {
+                guard category == .other || category == group else { continue }
+                if phrases.contains(where: { contains(details, phrase: $0) }) {
+                    category = group
+                    topics.insert(topic)
+                }
+            }
+        }
+        return Profile(category: category, topics: topics, name: name,
+                       bundle: normalized(app.id ?? ""))
+    }
+
+    static func rank(app: ASRepository.App, candidates: [AppsCatalogEntry], limit: Int = 8) -> [AppsCatalogEntry] {
+        let target = profile(app)
+        guard target.category != .other, limit > 0 else { return [] }
+        var scored: [(entry: AppsCatalogEntry, score: Int, profile: Profile)] = []
+        for entry in candidates {
+            let candidate = profile(entry.app)
+            guard candidate.name != target.name,
+                  target.bundle.isEmpty || candidate.bundle != target.bundle,
+                  entry.app.currentDownloadUrl != app.currentDownloadUrl,
+                  candidate.category == target.category else { continue }
+            let overlap = target.topics.intersection(candidate.topics)
+            // If we know the purpose, require evidence of that same purpose.
+            // Unknown media/game genres must not produce misleading suggestions.
+            if !target.topics.isEmpty && overlap.isEmpty { continue }
+            if target.topics.isEmpty && [.media, .games].contains(target.category) { continue }
+            let score = 10 + overlap.count * 100
+            scored.append((entry, score, candidate))
+        }
+        scored.sort {
+            if $0.score != $1.score { return $0.score > $1.score }
+            let left = $0.entry.app.currentDate?.date ?? .distantPast
+            let right = $1.entry.app.currentDate?.date ?? .distantPast
+            if left != right { return left > right }
+            return $0.entry.id < $1.entry.id
+        }
+        var names = Set<String>()
+        var bundles = Set<String>()
+        return scored.compactMap { item -> AppsCatalogEntry? in
+            guard !names.contains(item.profile.name),
+                  item.profile.bundle.isEmpty || !bundles.contains(item.profile.bundle) else { return nil }
+            names.insert(item.profile.name)
+            if !item.profile.bundle.isEmpty { bundles.insert(item.profile.bundle) }
+            return item.entry
+        }.prefix(limit).map { $0 }
+    }
+
+    @MainActor
+    static func load(app: ASRepository.App, sourceURL: URL?, source: ASRepository) async -> [AppsCatalogEntry] {
+        let cached = await AppsCatalogView.recommendationCatalog()
+        let context = SourceAppsView.SourceRepositoryContext(sourceURL: sourceURL, repository: source)
+        return await Task.detached(priority: .userInitiated) {
+            // Include the current source even when opened outside the Apps tab.
+            let local = AppsCatalogIndex.build(from: [context]).entries
+            return rank(app: app, candidates: local + cached)
+        }.value
+    }
+}

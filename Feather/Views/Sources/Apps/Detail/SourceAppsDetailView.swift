@@ -18,6 +18,8 @@ struct SourceAppsDetailView: View {
 	@State var cancellable: AnyCancellable? // Combine
 	@State private var _isScreenshotPreviewPresented: Bool = false
 	@State private var _selectedScreenshotIndex: Int = 0
+	@State private var relatedApps: [AppsCatalogEntry] = []
+	@State private var isLoadingRelatedApps = true
 	
 	var currentDownload: Download? {
 		downloadManager.getDownload(by: app.currentUniqueId)
@@ -191,6 +193,8 @@ struct SourceAppsDetailView: View {
 						)
 					}
 				}
+				Divider()
+                relatedAppsSection
 			}
 			.padding([.horizontal, .bottom])
 			.padding(.top, {
@@ -201,6 +205,14 @@ struct SourceAppsDetailView: View {
 				}
 			}())
 		}
+		.task(id: "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)") {
+            relatedApps = []
+            isLoadingRelatedApps = true
+            let results = await RelatedApps.load(app: app, sourceURL: sourceURL, source: source)
+            guard !Task.isCancelled else { return }
+            relatedApps = results
+            isLoadingRelatedApps = false
+        }
 		.flexibleHeaderScrollView()
 		.shouldSetInset()
 		.toolbar {
@@ -227,6 +239,60 @@ struct SourceAppsDetailView: View {
 		}
 	}
 	
+
+    private var relatedAppsSection: some View {
+        NBSection("تطبيقات ذات صلة") {
+            if isLoadingRelatedApps {
+                ProgressView("جارٍ البحث عن تطبيقات مشابهة…")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical)
+            } else if relatedApps.isEmpty {
+                Text("ماكو تطبيقات مشابهة كافية بالمصادر المتاحة حالياً.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(relatedApps) { entry in
+                        NavigationLink {
+                            SourceAppsDetailView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+                        } label: {
+                            HStack(spacing: 12) {
+                                LazyImage(url: entry.app.iconURL) { state in
+                                    if let image = state.image {
+                                        image.resizable().scaledToFill()
+                                    } else {
+                                        Image("App_Unknown").resizable().scaledToFit()
+                                    }
+                                }
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 13))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(entry.app.currentName)
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text(entry.app.currentDescription ?? entry.category.title)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.forward")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(10)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 16))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
 	var standardIcon: some View {
 		Image("App_Unknown").appIconStyle(size: 111, isCircle: false)
 	}
