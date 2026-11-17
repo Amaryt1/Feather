@@ -1032,6 +1032,7 @@ struct AppsCatalogView: View {
             } else {
                 Task { await refreshPrivateCatalogInBackground() }
             }
+            Task { await appendAppTestersIfNeeded() }
             return
         }
 
@@ -1053,6 +1054,7 @@ struct AppsCatalogView: View {
             } else {
                 Task { await refreshPrivateCatalogInBackground() }
             }
+            Task { await appendAppTestersIfNeeded() }
             return
         }
 
@@ -1063,6 +1065,7 @@ struct AppsCatalogView: View {
             await applyRepositories(prebuilt.contexts, sha256: prebuilt.sha256)
             hasLoaded = true
             isLoading = false
+            Task { await appendAppTestersIfNeeded() }
             return
         }
 
@@ -1094,6 +1097,7 @@ struct AppsCatalogView: View {
         }
 
         await applyRepositories(loadedContexts, sha256: nil)
+        Task { await appendAppTestersIfNeeded() }
         hasLoaded = true
         isLoading = false
     }
@@ -1126,6 +1130,14 @@ struct AppsCatalogView: View {
                 await Self.saveCategoryMap(categories, sha256: sha256)
             }
         }
+    }
+
+    @MainActor
+    private func appendAppTestersIfNeeded() async {
+        guard !repositories.contains(where: { $0.sourceURL == Self.appTestersFeedURL }) else { return }
+        guard let source = await Self.fetchPrivateRepository(from: Self.appTestersFeedURL) else { return }
+        let updated = repositories + [source]
+        await applyRepositories(updated, sha256: nil)
     }
 
     @MainActor
