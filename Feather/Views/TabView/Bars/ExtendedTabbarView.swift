@@ -13,6 +13,7 @@ import NukeUI
 struct ExtendedTabbarView: View {
 	@Environment(\.horizontalSizeClass) var horizontalSizeClass
 	@Environment(\.scenePhase) private var scenePhase
+	@Environment(\.scenePhase) private var scenePhase
 	@AppStorage("Feather.tabCustomization") var customization = TabViewCustomization()
 	@StateObject var viewModel = SourcesViewModel.shared
 	@State private var selectedTab: TabEnum = .new
