@@ -21,6 +21,9 @@ struct FeatherApp: App {
 	
 	var body: some Scene {
 		WindowGroup {
+            if ProcessInfo.processInfo.arguments.contains("-AMARYTCatalogPreview") {
+                AMARYTCatalogPreviewView()
+            } else {
 			VStack {
 				DownloadHeaderView(downloadManager: downloadManager)
 					.transition(.move(edge: .top).combined(with: .opacity))
@@ -46,6 +49,7 @@ struct FeatherApp: App {
 				
 				UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: UserDefaults.standard.string(forKey: "Feather.userTintColor") ?? "#848ef9"))
 			}
+            }
 		}
 	}
 	
