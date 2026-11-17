@@ -47,7 +47,7 @@ enum AMARYTCatalogAPI {
     static func fetchPage(_ index: Int, manifest: Manifest, session: URLSession = .shared) async throws -> [AppSummary] {
         guard index >= 0 && index < manifest.pageCount else { return [] }
         let pageName = String(format: "%06d", index)
-        let path = manifest.pagePattern.replacingOccurrences(of: "%06d", with: pageName)
+        let path = manifest.pagePattern.replacingOccurrences(of: "{page:06d}", with: pageName)
         let page: Page = try await fetch(path, session: session)
         guard page.schemaVersion == 2 else { throw CatalogError.unsupportedSchema(page.schemaVersion) }
         return page.items
