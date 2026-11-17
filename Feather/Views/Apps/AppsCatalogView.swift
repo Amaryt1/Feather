@@ -1449,7 +1449,15 @@ private struct AppsCatalogRecentUpdatesView: View {
         NavigationStack {
             Group {
                 if rows.isEmpty && !loading && recentManifest?.pageCount == 0 {
-                    ContentUnavailableView("لا توجد تحديثات حديثة", systemImage: "clock")
+                    VStack(spacing: 12) {
+                        Image(systemName: "clock")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text("لا توجد تحديثات حديثة")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 14) {
