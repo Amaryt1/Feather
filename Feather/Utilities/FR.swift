@@ -31,6 +31,7 @@ enum FR {
 				try await handler.extract()
 				try await handler.move()
 				try await handler.addToDatabase()
+                download?.importedUUID = handler.importedUUID
 				try? await handler.clean()
 				await MainActor.run {
 					completion(nil)
@@ -49,6 +50,7 @@ enum FR {
 		using options: Options,
 		icon: UIImage?,
 		certificate: CertificatePair?,
+        onSigned: ((String) -> Void)? = nil,
 		completion: @escaping (Error?) -> Void
 	) {
 		Task.detached {
@@ -60,6 +62,7 @@ enum FR {
 				try await handler.copy()
 				try await handler.modify()
 				try? await handler.clean()
+                await MainActor.run { onSigned?(handler.signedUUID) }
 				await MainActor.run {
 					completion(nil)
 				}
