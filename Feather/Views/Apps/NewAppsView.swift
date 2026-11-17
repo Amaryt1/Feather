@@ -186,40 +186,42 @@ private struct NewAppFeatureCard: View {
                         endPoint: .bottom
                     )
 
-                    HStack(spacing: 10) {
-                        if let iconURL = app.iconURL {
-                            LazyImage(url: iconURL) { state in
-                                if let image = state.image {
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } else {
-                                    Image(systemName: "app.fill").resizable().scaledToFit().padding(13)
+                    if horizontalSizeClass != .regular {
+                        HStack(spacing: 10) {
+                            if let iconURL = app.iconURL {
+                                LazyImage(url: iconURL) { state in
+                                    if let image = state.image {
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } else {
+                                        Image(systemName: "app.fill").resizable().scaledToFit().padding(13)
+                                    }
                                 }
-                            }
-                            .frame(width: 58, height: 58)
-                            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.25), lineWidth: 1))
-                        } else {
-                            Image(systemName: "app.fill")
-                                .font(.system(size: 28))
                                 .frame(width: 58, height: 58)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
-                        }
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(app.currentName)
-                                .font(.headline.weight(.bold))
+                                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.25), lineWidth: 1))
+                            } else {
+                                Image(systemName: "app.fill")
+                                    .font(.system(size: 28))
+                                    .frame(width: 58, height: 58)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
+                            }
+    
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(app.currentName)
+                                    .font(.headline.weight(.bold))
+                                    .foregroundStyle(.white)
+                                Text(app.currentDescription ?? "تطبيق جديد")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.88))
+                                    .lineLimit(2)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "arrow.up.right")
+                                .font(.caption.bold())
                                 .foregroundStyle(.white)
-                            Text(app.currentDescription ?? "تطبيق جديد")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.88))
-                                .lineLimit(2)
+                                .padding(10)
+                                .background(.ultraThinMaterial, in: Circle())
                         }
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.right")
-                            .font(.caption.bold())
-                            .foregroundStyle(.white)
-                            .padding(10)
-                            .background(.ultraThinMaterial, in: Circle())
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 15)
@@ -248,6 +250,41 @@ private struct NewAppFeatureCard: View {
                 .frame(maxWidth: .infinity)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+
+                if horizontalSizeClass == .regular {
+                    HStack(spacing: 12) {
+                        if let iconURL = app.iconURL {
+                            LazyImage(url: iconURL) { state in
+                                if let image = state.image {
+                                    image.resizable().aspectRatio(contentMode: .fill)
+                                } else {
+                                    Image(systemName: "app.fill").resizable().scaledToFit().padding(13)
+                                }
+                            }
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        } else {
+                            Image(systemName: "app.fill")
+                                .font(.system(size: 30))
+                                .frame(width: 64, height: 64)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        }
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(app.currentName)
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.primary)
+                            Text(app.currentDescription ?? "تطبيق جديد")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
 
                 HStack(spacing: 8) {
                     Label(app.currentVersion.map { "v\($0)" } ?? "الإصدار غير محدد", systemImage: "tag")
