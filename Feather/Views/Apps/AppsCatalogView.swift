@@ -1196,6 +1196,15 @@ struct AppsCatalogView: View {
 
     private var catalogControls: some View {
         HStack(spacing: 10) {
+            NavigationLink {
+                AMARYTCatalogPreviewView()
+            } label: {
+                Label("كتالوج API", systemImage: "square.stack.3d.up")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("فتح كتالوج التطبيقات من AMARYT API")
+
             Text("التطبيقات: \(catalogEntries.count)")
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
