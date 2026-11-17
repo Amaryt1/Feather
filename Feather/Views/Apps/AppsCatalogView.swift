@@ -616,6 +616,28 @@ private struct PrivateAppsCatalogPayload: Decodable {
     let sources: [PrivateAppsCatalogSource]
 }
 
+private struct ShardedCatalogManifest: Decodable {
+    let schemaVersion: Int
+    let revision: String
+    let sources: [ShardedCatalogSource]
+}
+private struct ShardedCatalogSource: Decodable {
+    let name: String
+    let sourceURL: URL
+    let appCount: Int
+    let pages: [ShardedCatalogPage]
+}
+private struct ShardedCatalogPage: Decodable {
+    let sha256: String
+    let url: URL
+    let compressedBytes: Int
+    let appCount: Int
+}
+private struct ShardedCatalogPayload: Decodable {
+    let sourceURL: URL
+    let repository: ASRepository
+}
+
 private struct PrivateAppsCatalogIndexCache: Codable {
     let schemaVersion: Int
     let sha256: String
@@ -847,11 +869,75 @@ struct AppsCatalogView: View {
         }
     }
 
+    // Opt-in v2: switch off instantly to use the original v1 catalog.
+    // The v2 manifest is intentionally separate from the production v1 manifest.
+    nonisolated private static let shardedManifestURL = URL(
+        string: "https://raw.githubusercontent.com/Amaryt1/Feather/main/catalogs/private-apps/v2/manifest.json"
+    )!
+    nonisolated private static var useShardedCatalog: Bool {
+        UserDefaults.standard.bool(forKey: "AMARYT_ENABLE_SHARDED_CATALOG")
+    }
+
+    private static func loadShardedCatalog() async -> (sha256: String, contexts: [SourceAppsView.SourceRepositoryContext])? {
+        guard useShardedCatalog else { return nil }
+        return await Task.detached(priority: .utility) {
+            let session = URLSession.shared
+            var request = URLRequest(url: shardedManifestURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 25)
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            guard let (manifestData, response) = try? await session.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let manifest = try? JSONDecoder().decode(ShardedCatalogManifest.self, from: manifestData),
+                  manifest.schemaVersion == 2, manifest.revision.count == 64,
+                  !manifest.sources.isEmpty,
+                  manifest.sources.allSatisfy({ !$0.pages.isEmpty && $0.appCount > 0 }) else { return nil }
+
+            let directory = privateCatalogCacheDirectory?.appendingPathComponent("v2", isDirectory: true)
+            guard let directory else { return nil }
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var contexts: [SourceAppsView.SourceRepositoryContext] = []
+            for source in manifest.sources {
+                var count = 0
+                for page in source.pages {
+                    guard page.sha256.count == 64,
+                          page.compressedBytes > 0,
+                          page.appCount > 0, page.appCount <= 250,
+                          page.url.scheme == "https",
+                          page.url.host == "raw.githubusercontent.com",
+                          page.url.path.hasPrefix("/Amaryt1/Feather/main/catalogs/private-apps/v2/") else { return nil }
+                    let file = directory.appendingPathComponent(page.sha256 + ".json.gz")
+                    var bytes = try? Data(contentsOf: file)
+                    if bytes == nil {
+                        guard let (downloaded, response) = try? await session.data(from: page.url),
+                              (response as? HTTPURLResponse)?.statusCode == 200,
+                              downloaded.count == page.compressedBytes else { return nil }
+                        bytes = downloaded
+                    }
+                    guard let bytes,
+                          bytes.count == page.compressedBytes,
+                          SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == page.sha256,
+                          let json = try? GzipArchive.unarchive(archive: bytes),
+                          let payload = try? JSONDecoder().decode(ShardedCatalogPayload.self, from: json),
+                          payload.sourceURL == source.sourceURL,
+                          payload.repository.apps.count == page.appCount else { return nil }
+                    if !FileManager.default.fileExists(atPath: file.path) {
+                        try? bytes.write(to: file, options: .atomic)
+                    }
+                    contexts.append(.init(sourceURL: source.sourceURL, repository: payload.repository))
+                    count += page.appCount
+                }
+                guard count == source.appCount else { return nil }
+            }
+            return (manifest.revision, contexts)
+        }.value
+    }
+
     // Reuse the catalog for details opened from Apps, New, or Sources.
     static func recommendationCatalog() async -> [AppsCatalogEntry] {
         if let index = AppsCatalogMemoryCache.shared.index { return index.entries }
         let snapshot: (sha256: String, contexts: [SourceAppsView.SourceRepositoryContext])?
-        if let cached = await loadCachedPrivateCatalog() {
+        if let sharded = await loadShardedCatalog() {
+            snapshot = sharded
+        } else if let cached = await loadCachedPrivateCatalog() {
             snapshot = cached
         } else {
             snapshot = await fetchPrebuiltPrivateCatalog()
@@ -943,6 +1029,13 @@ struct AppsCatalogView: View {
             return
         }
 
+        if Self.useShardedCatalog, let sharded = await Self.loadShardedCatalog() {
+            await applyRepositories(sharded.contexts, sha256: sharded.sha256)
+            hasLoaded = true
+            isLoading = false
+            return
+        }
+
         // On a cold app launch, decode the last valid disk snapshot once. The
         // category map avoids repeating the expensive text classification pass.
         if let cached = await Self.loadCachedPrivateCatalog() {
@@ -1031,6 +1124,12 @@ struct AppsCatalogView: View {
 
     @MainActor
     private func refreshPrivateCatalogInBackground() async {
+        if Self.useShardedCatalog, let sharded = await Self.loadShardedCatalog() {
+            if AppsCatalogMemoryCache.shared.sha256 != sharded.sha256 {
+                await applyRepositories(sharded.contexts, sha256: sharded.sha256)
+            }
+            return
+        }
         guard let manifest = await Self.fetchPrivateCatalogManifest() else { return }
 
         // An unchanged manifest means the current in-memory index is already valid.
