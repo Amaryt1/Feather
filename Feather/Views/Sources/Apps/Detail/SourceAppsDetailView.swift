@@ -17,6 +17,8 @@ struct SourceAppsDetailView: View {
     @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
+    @State private var libraryImportDownloadID: String?
+    @State private var libraryImportComplete = false
     @State private var directInstallDownloadID: String?
     @State private var isDirectInstallSigning = false
     @State private var directInstallError: String?
@@ -351,6 +353,20 @@ struct SourceAppsDetailView: View {
         }
     }
 
+    private func importToLibrary() {
+        guard let url = app.currentDownloadUrl else {
+            directInstallError = "رابط تحميل التطبيق غير متوفر."
+            return
+        }
+        libraryImportComplete = false
+        let download = downloadManager.startDownload(
+            from: url,
+            id: app.currentUniqueId,
+            sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
+        )
+        libraryImportDownloadID = download.id
+    }
+
     private var storeActions: some View {
         HStack(spacing: 10) {
             Button {
@@ -370,15 +386,22 @@ struct SourceAppsDetailView: View {
             }
             .disabled(isDirectInstallSigning || directInstallDownloadID != nil)
             .buttonStyle(.borderedProminent)
-            Button("استيراد إلى المكتبة") {
-                if let url = app.currentDownloadUrl {
-                    _ = downloadManager.startDownload(
-                        from: url,
-                        id: app.currentUniqueId,
-                        sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
-                    )
+            Button {
+                importToLibrary()
+            } label: {
+                if let id = libraryImportDownloadID,
+                   let download = downloadManager.getDownload(by: id) {
+                    VStack(spacing: 3) {
+                        Text("جارٍ الاستيراد")
+                        ProgressView(value: download.overallProgress)
+                    }
+                } else if libraryImportComplete {
+                    Label("تمت الإضافة", systemImage: "checkmark")
+                } else {
+                    Text("استيراد إلى المكتبة")
                 }
             }
+            .disabled(libraryImportDownloadID != nil || libraryImportComplete)
             .buttonStyle(.bordered)
         }
         .font(.subheadline)
@@ -395,6 +418,16 @@ struct SourceAppsDetailView: View {
             Button("حسنًا", role: .cancel) { directInstallError = nil }
         } message: {
             Text(directInstallError ?? "")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Feather.libraryImportFinished"))) { notification in
+            guard let downloadID = notification.object as? String,
+                  downloadID == libraryImportDownloadID else { return }
+            libraryImportDownloadID = nil
+            if let error = notification.userInfo?["error"] as? String {
+                directInstallError = error
+            } else {
+                libraryImportComplete = true
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Feather.directInstallImported"))) { notification in
             guard let downloadID = notification.object as? String,
