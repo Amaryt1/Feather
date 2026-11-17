@@ -32,7 +32,7 @@ enum TabEnum: String, CaseIterable, Hashable {
 		case .new: return "sparkles"
 		case .sources: return "globe.desk"
 		case .apps: return "square.grid.2x2.fill"
-		case .library: return "square.grid.2x2"
+		case .library: return "books.vertical"
 		case .settings: return "gearshape.2"
 		case .certificates: return "person.text.rectangle"
 		}
