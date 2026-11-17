@@ -1308,10 +1308,10 @@ struct AppsCatalogView: View {
 
     private var catalogControls: some View {
         HStack(spacing: 10) {
-            Text("التطبيقات: \\(catalogEntries.count)")
+            Text("التطبيقات: \(catalogEntries.count)")
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("عدد التطبيقات \\(catalogEntries.count)")
+                .accessibilityLabel("عدد التطبيقات \(catalogEntries.count)")
             Spacer(minLength: 0)
 
             Menu {
