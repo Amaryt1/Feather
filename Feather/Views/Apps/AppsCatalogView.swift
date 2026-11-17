@@ -851,6 +851,8 @@ struct AppsCatalogView: View {
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = AppsCatalogMemoryCache.shared.index?.repositories ?? []
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
+    @State private var displayedEntryLimit = 40
+    private let catalogPageSize = 40
     @State private var isLoading = AppsCatalogMemoryCache.shared.index == nil
     @State private var hasLoaded = AppsCatalogMemoryCache.shared.index != nil
     @State private var sortOption: AppsCatalogSort = .recommended
@@ -1046,6 +1048,10 @@ struct AppsCatalogView: View {
         recentlyUpdatedEntries = Self.recentUpdates(in: index.entries)
     }
 
+    private var visibleEntries: [AppsCatalogEntry] {
+        Array(filteredEntries.prefix(displayedEntryLimit))
+    }
+
     private var filteredEntries: [AppsCatalogEntry] {
         var result = entries
 
@@ -1104,11 +1110,16 @@ struct AppsCatalogView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: catalogGridColumns, spacing: 16) {
-                            ForEach(filteredEntries) { entry in
+                            ForEach(visibleEntries) { entry in
                                 AppsCatalogPremiumCard(entry: entry) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
                                         sourceURL: entry.sourceURL, source: entry.source, app: entry.app
                                     )
+                                }
+                            }
+                            if visibleEntries.count < filteredEntries.count {
+                                Color.clear.frame(height: 1).onAppear {
+                                    displayedEntryLimit = min(displayedEntryLimit + catalogPageSize, filteredEntries.count)
                                 }
                             }
                         }
@@ -1123,6 +1134,8 @@ struct AppsCatalogView: View {
                 }
             }
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
+            .onChange(of: searchText) { _ in displayedEntryLimit = catalogPageSize }
+            .onChange(of: sortOption) { _ in displayedEntryLimit = catalogPageSize }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { isDownloadsPresented = true } label: {
