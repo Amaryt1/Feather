@@ -1132,12 +1132,46 @@ struct AppsCatalogView: View {
         }
     }
 
+    nonisolated private static var appTestersCacheURL: URL? {
+        privateCatalogCacheDirectory?.appendingPathComponent("apptesters-source.json")
+    }
+
+    private static func cachedAppTesters() async -> SourceAppsView.SourceRepositoryContext? {
+        await Task.detached(priority: .utility) {
+            guard let file = appTestersCacheURL,
+                  let data = try? Data(contentsOf: file),
+                  let repo = try? JSONDecoder().decode(ASRepository.self, from: data),
+                  !repo.apps.isEmpty else { return nil }
+            return .init(sourceURL: appTestersFeedURL, repository: repo)
+        }.value
+    }
+
+    private static func fetchAndCacheAppTesters() async -> SourceAppsView.SourceRepositoryContext? {
+        await Task.detached(priority: .utility) {
+            var request = URLRequest(url: appTestersFeedURL, timeoutInterval: 120)
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true,
+                  let repo = try? JSONDecoder().decode(ASRepository.self, from: data),
+                  !repo.apps.isEmpty else { return nil }
+            if let file = appTestersCacheURL {
+                try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: file, options: .atomic)
+            }
+            return .init(sourceURL: appTestersFeedURL, repository: repo)
+        }.value
+    }
+
     @MainActor
     private func appendAppTestersIfNeeded() async {
         guard !repositories.contains(where: { $0.sourceURL == Self.appTestersFeedURL }) else { return }
-        guard let source = await Self.fetchPrivateRepository(from: Self.appTestersFeedURL) else { return }
-        let updated = repositories + [source]
-        await applyRepositories(updated, sha256: nil)
+        if let cached = await Self.cachedAppTesters() {
+            await applyRepositories(repositories + [cached], sha256: nil)
+        }
+        // Refresh in the background; a failed network request never erases cached apps.
+        guard let refreshed = await Self.fetchAndCacheAppTesters() else { return }
+        let others = repositories.filter { $0.sourceURL != Self.appTestersFeedURL }
+        await applyRepositories(others + [refreshed], sha256: nil)
     }
 
     @MainActor
