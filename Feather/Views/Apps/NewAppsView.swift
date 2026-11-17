@@ -36,6 +36,10 @@ struct NewAppsView: View {
                             }
                         }
                         .padding(16)
+                        // Keep the New section at a phone-like content width on iPad.
+                        // The outer frame centers the column without changing iPhone sizing.
+                        .frame(maxWidth: 430)
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .refreshable { await loadRepository() }
                 } else {
