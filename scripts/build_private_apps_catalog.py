@@ -7,6 +7,7 @@ import concurrent.futures
 import gzip
 import hashlib
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -18,6 +19,11 @@ FEEDS = (
     ("AMARYT STORE", "https://raw.githubusercontent.com/Amaryt1/Mstoda/main/apps.json"),
     ("AltMaker", "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com"),
 )
+
+APPTESTERS_ENABLED = os.environ.get("AMARYT_ENABLE_APPTESTERS", "0") == "1"
+APPTESTERS_FEED = ("AppTesters", "https://repository.apptesters.org/")
+if APPTESTERS_ENABLED:
+    FEEDS = (*FEEDS, APPTESTERS_FEED)
 
 OUTPUT_DIR = Path("catalogs/private-apps")
 CATALOG_OUTPUT = OUTPUT_DIR / "catalog.json.gz"
