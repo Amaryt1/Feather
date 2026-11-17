@@ -13,10 +13,9 @@ import NukeUI
 struct ExtendedTabbarView: View {
 	@Environment(\.horizontalSizeClass) var horizontalSizeClass
 	@Environment(\.scenePhase) private var scenePhase
-	@Environment(\.scenePhase) private var scenePhase
 	@AppStorage("Feather.tabCustomization") var customization = TabViewCustomization()
 	@StateObject var viewModel = SourcesViewModel.shared
-	@State private var selectedTab: TabEnum = .new
+	@State private var tabViewID = UUID()
 	
 	@State private var _isAddingPresenting = false
 	
@@ -27,15 +26,15 @@ struct ExtendedTabbarView: View {
 	) private var _sources: FetchedResults<AltSource>
 
 	var body: some View {
-		TabView(selection: $selectedTab) {
+		TabView {
 			ForEach(TabEnum.defaultTabs, id: \.hashValue) { tab in
-				Tab(tab.title, systemImage: tab.icon, value: tab) {
+				Tab(tab.title, systemImage: tab.icon) {
 					TabEnum.view(for: tab)
 				}
 			}
 			
 			ForEach(TabEnum.customizableTabs, id: \.hashValue) { tab in
-				Tab(tab.title, systemImage: tab.icon, value: tab) {
+				Tab(tab.title, systemImage: tab.icon) {
 					TabEnum.view(for: tab)
 				}
 				.customizationID("tab.\(tab.rawValue)")
@@ -76,9 +75,10 @@ struct ExtendedTabbarView: View {
 		}
 		.tabViewStyle(.sidebarAdaptable)
 		.tabViewCustomization($customization)
+		.id(tabViewID)
 		.onChange(of: scenePhase) { phase in
 			if phase == .active {
-				selectedTab = .new
+				tabViewID = UUID()
 			}
 		}
 		.sheet(isPresented: $_isAddingPresenting) {
