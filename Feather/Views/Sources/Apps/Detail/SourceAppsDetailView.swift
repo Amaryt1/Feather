@@ -17,7 +17,10 @@ struct SourceAppsDetailView: View {
     @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
-    @State private var showInstallExplanation = false
+    @State private var directInstallDownloadID: String?
+    @State private var isDirectInstallSigning = false
+    @State private var directInstallError: String?
+    @State private var directInstallPreview: AnyApp?
 	@ObservedObject var downloadManager = DownloadManager.shared
 	@State private var _downloadProgress: Double = 0
 	@State var cancellable: AnyCancellable? // Combine
@@ -298,13 +301,63 @@ struct SourceAppsDetailView: View {
         }
     }
 
+    private func startDirectInstall() {
+        guard let url = app.currentDownloadUrl else {
+            directInstallError = "رابط تحميل التطبيق غير متوفر."
+            return
+        }
+        let id = "FeatherDirectInstall_\(UUID().uuidString)"
+        let download = downloadManager.startDownload(
+            from: url,
+            id: id,
+            sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
+        )
+        download.directInstall = true
+        directInstallDownloadID = download.id
+    }
+
+    private func signDirectInstall(importedUUID: String) {
+        let request = NSFetchRequest<Imported>(entityName: "Imported")
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(format: "uuid == %@", importedUUID)
+        guard let imported = try? Storage.shared.context.fetch(request).first else {
+            directInstallError = "تعذر العثور على التطبيق بعد اكتمال التنزيل."
+            return
+        }
+        let selectedIndex = UserDefaults.standard.integer(forKey: "feather.selectedCert")
+        guard availableCertificates.indices.contains(selectedIndex) else {
+            showCertificateAlert = true
+            return
+        }
+        isDirectInstallSigning = true
+        FR.signPackageFile(
+            imported,
+            using: OptionsManager.shared.options,
+            icon: nil,
+            certificate: availableCertificates[selectedIndex],
+            onSigned: { signedUUID in
+                let signedRequest = NSFetchRequest<Signed>(entityName: "Signed")
+                signedRequest.fetchLimit = 1
+                signedRequest.predicate = NSPredicate(format: "uuid == %@", signedUUID)
+                if let signed = try? Storage.shared.context.fetch(signedRequest).first {
+                    directInstallPreview = AnyApp(base: signed)
+                } else {
+                    directInstallError = "تم التوقيع لكن تعذر فتح واجهة التثبيت."
+                }
+            }
+        ) { error in
+            isDirectInstallSigning = false
+            if let error { directInstallError = error.localizedDescription }
+        }
+    }
+
     private var storeActions: some View {
         HStack(spacing: 10) {
             Button("تثبيت") {
                 if availableCertificates.isEmpty {
                     showCertificateAlert = true
                 } else {
-                    showInstallExplanation = true
+                    startDirectInstall()
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -326,10 +379,24 @@ struct SourceAppsDetailView: View {
         } message: {
             Text("يجب إضافة شهادة قبل تثبيت التطبيق.")
         }
-        .alert("التثبيت المباشر", isPresented: $showInstallExplanation) {
-            Button("حسنًا", role: .cancel) {}
+        .alert("تعذر التثبيت", isPresented: Binding(
+            get: { directInstallError != nil },
+            set: { if !$0 { directInstallError = nil } }
+        )) {
+            Button("حسنًا", role: .cancel) { directInstallError = nil }
         } message: {
-            Text("الشهادة متوفرة. التثبيت المباشر دون إضافة التطبيق للمكتبة غير متاح بعد؛ لم يبدأ تنزيل التطبيق.")
+            Text(directInstallError ?? "")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Feather.directInstallImported"))) { notification in
+            guard let uuid = notification.object as? String,
+                  uuid == directInstallDownloadID else { return }
+            directInstallDownloadID = nil
+            signDirectInstall(importedUUID: uuid)
+        }
+        .sheet(item: $directInstallPreview) { app in
+            InstallPreviewView(app: app.base, isSharing: app.archive)
+                .presentationDetents([.height(200)])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showCertificates) {
             NavigationStack {
