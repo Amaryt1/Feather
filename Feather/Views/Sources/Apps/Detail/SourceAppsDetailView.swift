@@ -388,8 +388,9 @@ struct SourceAppsDetailView: View {
             Text(directInstallError ?? "")
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Feather.directInstallImported"))) { notification in
-            guard let uuid = notification.object as? String,
-                  uuid == directInstallDownloadID else { return }
+            guard let downloadID = notification.object as? String,
+                  downloadID == directInstallDownloadID,
+                  let uuid = notification.userInfo?["importedUUID"] as? String else { return }
             directInstallDownloadID = nil
             signDirectInstall(importedUUID: uuid)
         }
