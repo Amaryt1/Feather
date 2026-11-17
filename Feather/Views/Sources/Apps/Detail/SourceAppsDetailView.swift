@@ -359,8 +359,7 @@ struct SourceAppsDetailView: View {
                 } else {
                     startDirectInstall()
                 }
-            }
-            label: {
+            } label: {
                 if isDirectInstallSigning {
                     Label("جارٍ التوقيع…", systemImage: "checkmark.shield")
                 } else if let id = directInstallDownloadID, downloadManager.getDownload(by: id) != nil {
