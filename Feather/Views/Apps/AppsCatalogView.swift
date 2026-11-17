@@ -660,6 +660,11 @@ private final class AppsCatalogMemoryCache {
         self.index = index
         self.sha256 = sha256
     }
+
+    func clear() {
+        index = nil
+        sha256 = nil
+    }
 }
 
 
@@ -960,6 +965,7 @@ struct AppsCatalogView: View {
     @State private var isLoading = AppsCatalogMemoryCache.shared.index == nil
     @State private var hasLoaded = AppsCatalogMemoryCache.shared.index != nil
     @State private var sortOption: AppsCatalogSort = .recommended
+    @AppStorage("AMARYT_ENABLE_SHARDED_CATALOG") private var shardedCatalogEnabled = false
     @State private var isDownloadsPresented = false
     @State private var isRecentUpdatesPresented = false
 
@@ -1282,6 +1288,11 @@ struct AppsCatalogView: View {
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
             }
         }
+        .onChange(of: shardedCatalogEnabled) { _ in
+            AppsCatalogMemoryCache.shared.clear()
+            hasLoaded = false
+            Task { await loadPrivateFeeds(force: true) }
+        }
         .task {
             _ = AppsCatalogPersonalization.shared
             await loadPrivateFeeds()
@@ -1293,6 +1304,8 @@ struct AppsCatalogView: View {
             Spacer(minLength: 0)
 
             Menu {
+                Toggle("مصدر AppTesters التجريبي", isOn: $shardedCatalogEnabled)
+                Divider()
                 ForEach(AppsCatalogSort.allCases, id: \.rawValue) { option in
                     Button {
                         sortOption = option
