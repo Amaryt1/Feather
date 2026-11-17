@@ -643,6 +643,7 @@ private final class AppsCatalogMemoryCache {
 
 @MainActor
 struct AppsCatalogView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
     nonisolated private static let privateFeedURLs: [URL] = [
         URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!
@@ -865,6 +866,14 @@ struct AppsCatalogView: View {
     @State private var recentlyUpdatedEntries: [AppsCatalogEntry] = AppsCatalogMemoryCache.shared.index.map { Self.recentUpdates(in: $0.entries) } ?? []
 
     private var entries: [AppsCatalogEntry] { catalogEntries }
+
+    private var catalogGridColumns: [GridItem] {
+        if horizontalSizeClass == .regular {
+            return Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
+        }
+        return [GridItem(.adaptive(minimum: 158), spacing: 12)]
+    }
+
 
     /// Build the seven-day shelf only when the catalog index changes, not on every
     /// SwiftUI body refresh, so large catalogs remain responsive.
@@ -1093,7 +1102,7 @@ struct AppsCatalogView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 158), spacing: 12)], spacing: 14) {
+                        LazyVGrid(columns: catalogGridColumns, spacing: 14) {
                             ForEach(filteredEntries) { entry in
                                 AppsCatalogPremiumCard(entry: entry) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
