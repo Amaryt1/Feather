@@ -12,6 +12,7 @@ import SwiftUI
 final class AppFileHandler: NSObject, @unchecked Sendable {
 	private let _fileManager = FileManager.default
 	private let _uuid = UUID().uuidString
+    var importedUUID: String { _uuid }
 	private let _uniqueWorkDir: URL
 	var uniqueWorkDirPayload: URL?
 
