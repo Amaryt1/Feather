@@ -183,144 +183,198 @@ private struct NewAppFeatureCard: View {
 
     var body: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .bottomLeading) {
-                    RoundedRectangle(cornerRadius: 23, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [accent.opacity(0.38), accent.opacity(0.12), Color(uiColor: .secondarySystemBackground)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-
-                    if let bannerURL = app.bannerURL {
-                        LazyImage(url: bannerURL) { state in
-                            if let image = state.image {
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                bannerFallback
-                            }
-                        }
-                    } else {
-                        bannerFallback
-                    }
-
-                    LinearGradient(
-                        colors: [.clear, accent.opacity(0.08), Color.black.opacity(0.12)],
-                        startPoint: .center,
-                        endPoint: .bottom
-                    )
-
-                    if horizontalSizeClass != .regular {
-                        HStack(spacing: 10) {
-                            if let iconURL = app.iconURL {
-                                LazyImage(url: iconURL) { state in
-                                    if let image = state.image {
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } else {
-                                        Image(systemName: "app.fill").resizable().scaledToFit().padding(13)
-                                    }
-                                }
-                                .frame(width: 58, height: 58)
-                                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.25), lineWidth: 1))
-                            } else {
-                                Image(systemName: "app.fill")
-                                    .font(.system(size: 28))
-                                    .frame(width: 58, height: 58)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
-                            }
-    
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(app.currentName)
-                                    .font(.headline.weight(.bold))
-                                    .foregroundStyle(.white)
-                                Text(app.currentDescription ?? "تطبيق جديد")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.88))
-                                    .lineLimit(2)
-                            }
-                            Spacer(minLength: 0)
-                            Image(systemName: "arrow.up.right")
-                                .font(.caption.bold())
-                                .foregroundStyle(.white)
-                                .padding(10)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 12)
-                    .background(bannerInfoBackground)
-                }
-                .frame(height: horizontalSizeClass == .regular ? 260 : 205)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
-
-                if horizontalSizeClass == .regular {
-                    HStack(spacing: 12) {
-                        if let iconURL = app.iconURL {
-                            LazyImage(url: iconURL) { state in
-                                if let image = state.image {
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } else {
-                                    Image(systemName: "app.fill").resizable().scaledToFit().padding(13)
-                                }
-                            }
-                            .frame(width: 64, height: 64)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        } else {
-                            Image(systemName: "app.fill")
-                                .font(.system(size: 30))
-                                .frame(width: 64, height: 64)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                        }
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(app.currentName)
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(.primary)
-                            Text(app.currentDescription ?? "تطبيق جديد")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-
-                HStack(spacing: 8) {
-                    Label(app.currentVersion.map { "v\($0)" } ?? "الإصدار غير محدد", systemImage: "tag")
-                    if let category = app.category {
-                        Text("•")
-                        Text(category)
-                    }
-                    Spacer()
-                    Text("التفاصيل")
-                        .fontWeight(.semibold)
-                    Image(systemName: "chevron.left")
-                }
-                .font(.caption)
-                .foregroundStyle(accent)
-                .padding(.horizontal, 5)
-                .padding(.top, 10)
-            }
-            .padding(11)
-            .background {
-                RoundedRectangle(cornerRadius: 27, style: .continuous)
-                    .fill(accent.opacity(0.075))
-                    .overlay(RoundedRectangle(cornerRadius: 27).strokeBorder(accent.opacity(0.16), lineWidth: 1))
-            }
+            cardContent
         }
         .buttonStyle(.plain)
         .task(id: (app.bannerURL ?? app.iconURL)?.absoluteString) {
             await sampleArtworkColor()
         }
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            bannerSection
+
+            if horizontalSizeClass == .regular {
+                tabletAppInfo
+            }
+
+            metadataRow
+        }
+        .padding(11)
+        .background(cardBackground)
+    }
+
+    private var bannerSection: some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 23, style: .continuous)
+                .fill(bannerPlaceholderGradient)
+
+            bannerArtwork
+
+            LinearGradient(
+                colors: [.clear, accent.opacity(0.08), Color.black.opacity(0.12)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+
+            if horizontalSizeClass != .regular {
+                compactAppInfo
+            }
+        }
+        .frame(height: horizontalSizeClass == .regular ? 260 : 205)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+    }
+
+    private var bannerPlaceholderGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                accent.opacity(0.38),
+                accent.opacity(0.12),
+                Color(uiColor: .secondarySystemBackground)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    @ViewBuilder
+    private var bannerArtwork: some View {
+        if let bannerURL = app.bannerURL {
+            LazyImage(url: bannerURL) { state in
+                if let image = state.image {
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    bannerFallback
+                }
+            }
+        } else {
+            bannerFallback
+        }
+    }
+
+    private var compactAppInfo: some View {
+        HStack(spacing: 10) {
+            appIcon(size: 58, cornerRadius: 15)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(app.currentName)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text(appDescription)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "arrow.up.right")
+                .font(.caption.bold())
+                .foregroundStyle(.white)
+                .padding(10)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 15)
+        .padding(.vertical, 12)
+        .background(bannerInfoBackground)
+    }
+
+    private var tabletAppInfo: some View {
+        HStack(spacing: 12) {
+            appIcon(size: 64, cornerRadius: 16)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(app.currentName)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.primary)
+
+                Text(appDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            accent.opacity(0.07),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+    }
+
+    private var appDescription: String {
+        app.currentDescription ?? "تطبيق جديد"
+    }
+
+    @ViewBuilder
+    private func appIcon(size: CGFloat, cornerRadius: CGFloat) -> some View {
+        if let iconURL = app.iconURL {
+            LazyImage(url: iconURL) { state in
+                if let image = state.image {
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: "app.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .padding(13)
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.white.opacity(0.25), lineWidth: 1)
+            )
+        } else {
+            Image(systemName: "app.fill")
+                .font(.system(size: size * 0.48))
+                .frame(width: size, height: size)
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+        }
+    }
+
+    private var metadataRow: some View {
+        HStack(spacing: 8) {
+            Label(
+                app.currentVersion.map { "v\\($0)" } ?? "الإصدار غير محدد",
+                systemImage: "tag"
+            )
+
+            if let category = app.category {
+                Text("•")
+                Text(category)
+            }
+
+            Spacer()
+
+            Text("التفاصيل")
+                .fontWeight(.semibold)
+
+            Image(systemName: "chevron.left")
+        }
+        .font(.caption)
+        .foregroundStyle(accent)
+        .padding(.horizontal, 5)
+        .padding(.top, 10)
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 27, style: .continuous)
+            .fill(accent.opacity(0.075))
+            .overlay(
+                RoundedRectangle(cornerRadius: 27, style: .continuous)
+                    .strokeBorder(accent.opacity(0.16), lineWidth: 1)
+            )
     }
 
     @MainActor
