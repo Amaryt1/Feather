@@ -27,11 +27,16 @@ struct LibraryInfoView: View {
 				_bundleSection(for: app)
 				_executableSection(for: app)
 				
-				Section {
-					Button(.localized("Open in Files"), systemImage: "folder") {
-						UIApplication.open(Storage.shared.getUuidDirectory(for: app)!.toSharedDocumentsURL()!)
-					}
-				}
+				if Storage.shared.sourceMetadata(for: app) == nil {
+                    Section {
+                        Button(.localized("Open in Files"), systemImage: "folder") {
+                            if let directory = Storage.shared.getUuidDirectory(for: app),
+                               let sharedURL = directory.toSharedDocumentsURL() {
+                                UIApplication.open(sharedURL)
+                            }
+                        }
+                    }
+                }
 			}
 			.toolbar {
 				NBToolbarButton(role: .close)
