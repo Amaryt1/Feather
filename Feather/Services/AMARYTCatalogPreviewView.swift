@@ -8,7 +8,7 @@ struct AMARYTCatalogPreviewView: View {
     @State private var nextPage = 0
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var selectedDetail: String?
+    @State private var selectedApp: AMARYTCatalogAPI.AppSummary?
     @State private var searchText = ""
 
     private var filteredApps: [AMARYTCatalogAPI.AppSummary] {
@@ -31,7 +31,7 @@ struct AMARYTCatalogPreviewView: View {
                 }
                 ForEach(filteredApps) { app in
                     Button {
-                        selectedDetail = app.detailPath
+                        selectedApp = app
                     } label: {
                         HStack(spacing: 12) {
                             if let raw = app.iconURL, let url = URL(string: raw), url.scheme == "https" {
@@ -68,11 +68,8 @@ struct AMARYTCatalogPreviewView: View {
             .navigationTitle("API Catalog Preview")
             .searchable(text: $searchText)
             .task { await loadNextPage() }
-            .sheet(item: Binding(
-                get: { selectedDetail.map { DetailSelection(path: $0) } },
-                set: { selectedDetail = $0?.path }
-            )) { selection in
-                AMARYTDetailPreview(path: selection.path)
+            .sheet(item: $selectedApp) { app in
+                AMARYTDetailPreview(app: app)
             }
         }
     }
@@ -96,31 +93,66 @@ struct AMARYTCatalogPreviewView: View {
         }
     }
 
-    private struct DetailSelection: Identifiable {
-        let path: String
-        var id: String { path }
-    }
 }
 
 private struct AMARYTDetailPreview: View {
-    let path: String
-    @State private var text = "Loading…"
+    let app: AMARYTCatalogAPI.AppSummary
+    @State private var detail: DetailRecord?
+    @State private var errorMessage: String?
+
+    private struct DetailRecord: Decodable {
+        let id: String
+        let name: String
+        let localizedDescription: String?
+        let downloadURL: String?
+        let developerName: String?
+        let version: String?
+        let screenshotURLs: [String]?
+    }
+    private struct DetailPage: Decodable {
+        let items: [DetailRecord]
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                Text(text).font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled).padding()
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(app.name).font(.title2).bold()
+                    Text([app.version, app.sourceId].compactMap { $0 }.joined(separator: " · "))
+                        .foregroundStyle(.secondary)
+                    if let detail {
+                        Text(detail.localizedDescription ?? "No description provided")
+                        if let url = detail.downloadURL, let download = URL(string: url),
+                           ["https", "http"].contains(download.scheme?.lowercased() ?? "") {
+                            Link("Open IPA download URL", destination: download)
+                        }
+                        Text("Installation is not enabled in this API preview.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if let errorMessage {
+                        Text(errorMessage).foregroundStyle(.red)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
             }
-            .navigationTitle("API Details (read-only)")
+            .navigationTitle("App Details")
             .task {
+                guard let path = app.detailPath else {
+                    errorMessage = "No detail path for this app"
+                    return
+                }
                 do {
                     let data = try await AMARYTCatalogAPI.fetchDetail(path)
-                    let object = try JSONSerialization.jsonObject(with: data)
-                    let formatted = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-                    text = String(data: formatted, encoding: .utf8) ?? "Invalid UTF-8"
+                    let page = try JSONDecoder().decode(DetailPage.self, from: data)
+                    guard let record = page.items.first(where: { $0.id == app.id }) else {
+                        errorMessage = "App not found in detail page"
+                        return
+                    }
+                    detail = record
                 } catch {
-                    text = error.localizedDescription
+                    errorMessage = error.localizedDescription
                 }
             }
         }
