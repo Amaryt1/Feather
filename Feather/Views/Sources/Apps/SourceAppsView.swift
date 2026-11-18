@@ -38,9 +38,12 @@ enum StoreAppNameSearch {
         let compactQuery = normalizedQuery.replacingOccurrences(of: " ", with: "")
         let compactTitle = title.replacingOccurrences(of: " ", with: "")
         if compactTitle.contains(compactQuery) { return true }
-        // Multiple name fragments may have a modifier between them.
+        // Multiple words can match separate title words, but only at word
+        // starts: this avoids unrelated hits from fragments in long names.
         let terms = normalizedQuery.split(separator: " ")
-        return terms.count > 1 && terms.allSatisfy { title.contains($0) }
+        guard terms.count > 1 else { return false }
+        let titleWords = title.split(separator: " ")
+        return terms.allSatisfy { term in titleWords.contains { $0.hasPrefix(term) } }
     }
 }
 
