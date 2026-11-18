@@ -60,9 +60,10 @@ struct SourceAppsCellView: View {
 			
 			if
 				_storeCellAppearance != 0,
-				let desc = app.localizedDescription
+				let desc = app.localizedDescription,
+                !AppDescriptionSanitizer.clean(desc).isEmpty
 			{
-				Text(desc)
+				Text(AppDescriptionSanitizer.clean(desc))
 					.frame(maxWidth: .infinity, alignment: .leading)
 					.font(.subheadline)
 					.foregroundStyle(.secondary)
@@ -74,7 +75,7 @@ struct SourceAppsCellView: View {
 	static func appDescription(app: ASRepository.App) -> String {
 		let optionalComponents: [String?] = [
 			app.currentVersion,
-			app.currentDescription ?? .localized("An awesome application")
+			app.currentDescription.map(AppDescriptionSanitizer.clean) ?? .localized("An awesome application")
 		]
 		
 		let components: [String] = optionalComponents.compactMap { value in
