@@ -1103,15 +1103,17 @@ struct AppsCatalogView: View {
         recentlyUpdatedEntries = Self.recentUpdates(in: index.entries)
     }
 
+    private var filteredAPIApps: [AMARYTCatalogAPI.AppSummary] {
+        let query = StoreAppNameSearch.normalized(searchText)
+        guard !query.isEmpty else { return apiApps }
+        return apiApps.filter { StoreAppNameSearch.matches(name: $0.name, normalizedQuery: query) }
+    }
+
     private var filteredEntries: [AppsCatalogEntry] {
         var result = entries
-
-        if !searchText.isEmpty {
-            result = result.filter { entry in
-                entry.app.currentName.localizedCaseInsensitiveContains(searchText)
-                    || (entry.app.currentDescription?.localizedCaseInsensitiveContains(searchText) ?? false)
-                    || (entry.app.developer?.localizedCaseInsensitiveContains(searchText) ?? false)
-            }
+        let query = StoreAppNameSearch.normalized(searchText)
+        if !query.isEmpty {
+            result = result.filter { StoreAppNameSearch.matches(name: $0.app.currentName, normalizedQuery: query) }
         }
 
         switch sortOption {
@@ -1136,7 +1138,7 @@ struct AppsCatalogView: View {
                     Spacer()
                     ProgressView("جارٍ تحميل التطبيقات…")
                     Spacer()
-                } else if filteredEntries.isEmpty {
+                } else if filteredEntries.isEmpty && filteredAPIApps.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "square.grid.3x3")
                             .font(.system(size: 34))
@@ -1161,7 +1163,7 @@ struct AppsCatalogView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: catalogGridColumns, spacing: 16) {
-                            ForEach(apiApps.filter { searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) }) { app in
+                            ForEach(filteredAPIApps) { app in
                                 Button { Task { await openAPIApp(app) } } label: {
                                     VStack(alignment: .leading, spacing: 9) {
                                         ZStack {
