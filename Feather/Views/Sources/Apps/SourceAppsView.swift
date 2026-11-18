@@ -10,6 +10,40 @@ import AltSourceKit
 import NimbleViews
 import UIKit
 
+// Keep store searches focused on the displayed app name. Descriptions,
+// developers and bundle IDs can mention unrelated apps and create false hits.
+enum StoreAppNameSearch {
+    static func normalized(_ value: String) -> String {
+        let folded = value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased()
+            .replacingOccurrences(of: "أ", with: "ا")
+            .replacingOccurrences(of: "إ", with: "ا")
+            .replacingOccurrences(of: "آ", with: "ا")
+            .replacingOccurrences(of: "ٱ", with: "ا")
+            .replacingOccurrences(of: "ى", with: "ي")
+            .replacingOccurrences(of: "ة", with: "ه")
+            .replacingOccurrences(of: "ـ", with: "")
+        return folded
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    static func matches(name: String, normalizedQuery: String) -> Bool {
+        guard !normalizedQuery.isEmpty else { return true }
+        let title = normalized(name)
+        if title.contains(normalizedQuery) { return true }
+        // Searching "Hi TV" should also find a name written "HiTV".
+        let compactQuery = normalizedQuery.replacingOccurrences(of: " ", with: "")
+        let compactTitle = title.replacingOccurrences(of: " ", with: "")
+        if compactTitle.contains(compactQuery) { return true }
+        // Multiple name fragments may have a modifier between them.
+        let terms = normalizedQuery.split(separator: " ")
+        return terms.count > 1 && terms.allSatisfy { title.contains($0) }
+    }
+}
+
 // MARK: - Extension: View (Enil)
 extension SourceAppsView {
 	enum SortOption: String, CaseIterable {
