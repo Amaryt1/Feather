@@ -13,6 +13,7 @@ import OSLog
 @main
 struct FeatherApp: App {
 	@UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @State private var showWelcome = true
 	
 	let heartbeat = HeartbeatManager.shared
 	
@@ -24,6 +25,7 @@ struct FeatherApp: App {
             if ProcessInfo.processInfo.arguments.contains("-AMARYTCatalogPreview") {
                 AMARYTCatalogPreviewView()
             } else {
+            ZStack {
 			VStack {
 				DownloadHeaderView(downloadManager: downloadManager)
 					.transition(.move(edge: .top).combined(with: .opacity))
@@ -49,6 +51,14 @@ struct FeatherApp: App {
 				
 				UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: UserDefaults.standard.string(forKey: "Feather.userTintColor") ?? "#848ef9"))
 			}
+                if showWelcome {
+                    AMARYTWelcomeView().transition(.opacity).zIndex(1)
+                }
+            }
+            .task {
+                try? await Task.sleep(for: .seconds(2.5))
+                withAnimation(.easeOut(duration: 0.45)) { showWelcome = false }
+            }
             }
 		}
 	}
@@ -153,6 +163,86 @@ struct FeatherApp: App {
 			}
 		}
 	}
+}
+
+
+private struct AMARYTWelcomeView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var animate = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.width, geometry.size.height)
+            ZStack {
+                LinearGradient(colors: [
+                    Color(red: 0.015, green: 0.025, blue: 0.075),
+                    Color(red: 0.035, green: 0.055, blue: 0.14),
+                    Color(red: 0.11, green: 0.065, blue: 0.12)
+                ], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+
+                ForEach(0..<42, id: \.self) { index in
+                    let x = CGFloat((index * 73 + 19) % 101) / 100
+                    let y = CGFloat((index * 47 + 13) % 97) / 100
+                    Circle()
+                        .fill(Color.white.opacity(index.isMultiple(of: 4) ? 0.95 : 0.6))
+                        .frame(width: index.isMultiple(of: 5) ? 3 : 1.5,
+                               height: index.isMultiple(of: 5) ? 3 : 1.5)
+                        .opacity(animate && !reduceMotion ? (index.isMultiple(of: 3) ? 0.25 : 1) : 0.85)
+                        .position(x: x * geometry.size.width, y: y * geometry.size.height)
+                }
+
+                VStack(spacing: 18) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.yellow.opacity(0.13))
+                            .frame(width: side * 0.42, height: side * 0.42)
+                            .blur(radius: 35)
+
+                        Image(systemName: "moon.stars.fill")
+                            .font(.system(size: side * 0.26, weight: .ultraLight))
+                            .foregroundStyle(
+                                LinearGradient(colors: [.white, Color(red: 1, green: 0.77, blue: 0.24)],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .shadow(color: .yellow.opacity(0.8), radius: 25)
+                            .rotationEffect(.degrees(animate && !reduceMotion ? -7 : 0))
+                            .accessibilityHidden(true)
+                    }
+                    .frame(height: side * 0.38)
+
+                    Text("AMARYT")
+                        .font(.system(size: min(side * 0.115, 60), weight: .black, design: .rounded))
+                        .tracking(3)
+                        .foregroundStyle(.white)
+
+                    Text("STORE")
+                        .font(.system(size: min(side * 0.052, 27), weight: .bold, design: .rounded))
+                        .tracking(9)
+                        .foregroundStyle(Color(red: 1, green: 0.77, blue: 0.24))
+
+                    HStack(spacing: 8) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Circle()
+                                .fill(Color.yellow.opacity(animate && !reduceMotion && index == 1 ? 0.3 : 0.95))
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+                    .padding(.top, 12)
+                    .accessibilityLabel("جاري فتح المتجر")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(animate && !reduceMotion ? 1.025 : 1)
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    animate = true
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .combine)
+    }
 }
 
 class AppDelegate: NSObject, UIApplicationDelegate {
