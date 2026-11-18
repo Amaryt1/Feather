@@ -46,8 +46,9 @@ struct AppearanceView: View {
 					ForEach(UIUserInterfaceStyle.allCases.sorted(by: { $0.rawValue < $1.rawValue }), id: \.rawValue) { style in
 						Text(style.label).tag(style.rawValue)
 					}
+                    Text("Professional Neon").tag(StoreAppearance.professional.rawValue)
 				}
-				.pickerStyle(.segmented)
+				.pickerStyle(.menu)
 			}
 			
 			NBSection(.localized("Theme")) {
@@ -87,11 +88,6 @@ struct AppearanceView: View {
 				}
 				.labelsHidden()
 				.pickerStyle(.inline)
-			}
-		}
-		.onChange(of: _userIntefacerStyle) { value in
-			if let style = UIUserInterfaceStyle(rawValue: value) {
-				UIApplication.topViewController()?.view.window?.overrideUserInterfaceStyle = style
 			}
 		}
 	}

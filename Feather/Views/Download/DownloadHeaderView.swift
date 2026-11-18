@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import NimbleViews
 import Combine
 import NimbleExtensions
 
@@ -41,43 +42,68 @@ struct DownloadHeaderView: View {
 }
 
 struct DownloadItemView: View {
-	let download: Download
-	@State private var progress: Double = 0
-	@State private var bytesDownloaded: Int64 = 0
-	@State private var totalBytes: Int64 = 0
-	@State private var unpackageProgress: Double = 0
-	
-	var body: some View {
-		VStack(alignment: .leading, spacing: 4) {
-			Text(download.fileName)
-				.font(.subheadline)
-				.lineLimit(1)
-			
-			ProgressView(value: overallProgress)
-				.progressViewStyle(.linear)
-			
-			HStack {
-				Text(verbatim: "\(Int(overallProgress * 100))%")
-					.contentTransition(.numericText())
-				Spacer()
-				if totalBytes > 0 {
-					Text(verbatim: "\($bytesDownloaded.wrappedValue.formattedByteCount) / \(totalBytes.formattedByteCount)")
-						.contentTransition(.numericText())
-				}
-			}
-			.font(.caption)
-			.foregroundColor(.secondary)
-		}
-		.padding(.vertical, 4)
-		.onReceive(download.$progress) { self.progress = $0 }
-		.onReceive(download.$bytesDownloaded) { self.bytesDownloaded = $0 }
-		.onReceive(download.$totalBytes) { self.totalBytes = $0 }
-		.onReceive(download.$unpackageProgress) { self.unpackageProgress = $0 }
-	}
-	
-	private var overallProgress: Double {
-		download.onlyArchiving
-			? unpackageProgress
-			: (0.3 * unpackageProgress) + (0.7 * progress)
-	}
+    @ObservedObject var download: Download
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(download.fileName).font(.subheadline.weight(.semibold)).lineLimit(2)
+            DownloadMetricsView(download: download)
+        }
+        .padding(StoreTheme.inset)
+        .storeCard()
+    }
+}
+
+struct DownloadMetricsView: View {
+    @ObservedObject var download: Download
+    @Environment(\.storeAppearance) private var appearance
+    @State private var sampleTime = Date()
+    @State private var sampleBytes: Int64?
+    @State private var rate: Int64?
+
+    private var packaging: Bool { download.onlyArchiving || download.progress >= 1 }
+    private var fraction: Double? {
+        if packaging { return min(1, max(0, download.unpackageProgress)) }
+        guard download.totalBytes > 0 else { return nil }
+        return min(1, max(0, Double(download.bytesDownloaded) / Double(download.totalBytes)))
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(download.isPaused ? "متوقف مؤقتًا" : packaging ? "تجهيز الحزمة" : "تنزيل IPA")
+                Spacer()
+                if let fraction { Text(fraction.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit() }
+            }
+            ProgressView(value: fraction).progressViewStyle(.linear)
+                .tint(appearance == .professional ? StoreTheme.cyan : .accentColor)
+            if !packaging {
+                ViewThatFits(in: .horizontal) {
+                    HStack { byteCount; Spacer(); transferRate }
+                    VStack(alignment: .leading) { byteCount; transferRate }
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .accessibilityElement(children: .combine)
+        .onAppear { resetSample() }
+        .onChange(of: download.isPaused) { _ in resetSample() }
+        .onChange(of: download.bytesDownloaded) { bytes in
+            let now = Date()
+            let seconds = now.timeIntervalSince(sampleTime)
+            guard !download.isPaused, let previous = sampleBytes, bytes >= previous else { resetSample(); return }
+            guard seconds >= 1 else { return }
+            rate = Int64(Double(bytes - previous) / seconds)
+            sampleBytes = bytes
+            sampleTime = now
+        }
+    }
+    private var byteCount: Text {
+        let received = download.bytesDownloaded.formattedByteCount
+        return Text(verbatim: download.totalBytes > 0 ? "\(received) / \(download.totalBytes.formattedByteCount)" : received)
+    }
+    @ViewBuilder private var transferRate: some View {
+        if !download.isPaused, let rate, rate > 0 { Text(verbatim: "\(rate.formattedByteCount) / ث") }
+    }
+    private func resetSample() { sampleBytes = download.bytesDownloaded; sampleTime = Date(); rate = nil }
 }

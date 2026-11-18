@@ -1,4 +1,5 @@
 import SwiftUI
+import NimbleViews
 import AltSourceKit
 import NimbleJSON
 import NukeUI
@@ -60,7 +61,7 @@ struct NewAppsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .storeScreen(fallback: Color(uiColor: .systemGroupedBackground))
             .navigationTitle("جديد")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
@@ -148,12 +149,13 @@ struct NewAppsView: View {
 }
 
 private struct NewAppFeatureCard: View {
+    @Environment(\.storeAppearance) private var appearance
     let app: ASRepository.App
     let open: () -> Void
 
     @State private var sampledColor: Color?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    private var accent: Color { sampledColor ?? app.tintColor ?? Color.accentColor }
+    private var accent: Color { appearance == .professional ? StoreTheme.cyan : (sampledColor ?? app.tintColor ?? Color.accentColor) }
 
     private var bannerMaskGradient: LinearGradient {
         let stops: [Gradient.Stop] = [
@@ -185,9 +187,9 @@ private struct NewAppFeatureCard: View {
         Button(action: open) {
             cardContent
         }
-        .buttonStyle(.plain)
-        .task(id: (app.bannerURL ?? app.iconURL)?.absoluteString) {
-            await sampleArtworkColor()
+        .buttonStyle(StorePressStyle())
+        .task(id: "\(appearance.rawValue)-\((app.bannerURL ?? app.iconURL)?.absoluteString ?? "" )") {
+            if appearance != .professional { await sampleArtworkColor() }
         }
     }
 
@@ -196,8 +198,8 @@ private struct NewAppFeatureCard: View {
             bannerSection
             metadataRow
         }
-        .padding(11)
-        .background(cardBackground)
+        .padding(StoreTheme.inset)
+        .storeCard()
     }
 
     private var bannerSection: some View {
@@ -347,21 +349,12 @@ private struct NewAppFeatureCard: View {
             Text("التفاصيل")
                 .fontWeight(.semibold)
 
-            Image(systemName: "chevron.left")
+            Image(systemName: "chevron.forward")
         }
         .font(.caption)
         .foregroundStyle(accent)
         .padding(.horizontal, 5)
         .padding(.top, 10)
-    }
-
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 27, style: .continuous)
-            .fill(accent.opacity(0.075))
-            .overlay(
-                RoundedRectangle(cornerRadius: 27, style: .continuous)
-                    .strokeBorder(accent.opacity(0.16), lineWidth: 1)
-            )
     }
 
     @MainActor

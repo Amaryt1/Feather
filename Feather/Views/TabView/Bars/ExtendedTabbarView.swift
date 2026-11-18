@@ -7,10 +7,12 @@
 //
 
 import SwiftUI
+import NimbleViews
 import NukeUI
 
 @available(iOS 18, *)
 struct ExtendedTabbarView: View {
+    @Environment(\.storeAppearance) private var appearance
 	@Environment(\.horizontalSizeClass) var horizontalSizeClass
 	@Environment(\.scenePhase) private var scenePhase
 	@AppStorage("Feather.tabCustomization") var customization = TabViewCustomization()
@@ -66,6 +68,7 @@ struct ExtendedTabbarView: View {
 			.defaultVisibility(.hidden, for: .tabBar)
 			.hidden(true)
 		}
+		.toolbarBackground(appearance == .professional ? AnyShapeStyle(StoreTheme.midnight) : AnyShapeStyle(.bar), for: .tabBar)
 		.tabViewStyle(.sidebarAdaptable)
 		.tabViewCustomization($customization)
 		.id(tabViewID)
@@ -83,7 +86,7 @@ struct ExtendedTabbarView: View {
 	@ViewBuilder
 	private func _icon(_ title: String, iconUrl: URL?) -> some View {
 		Label {
-			Text(title)
+			Text(title).lineLimit(2).font(.body.weight(.medium))
 		} icon: {
 			if let iconURL = iconUrl {
 				LazyImage(url: iconURL) { state in

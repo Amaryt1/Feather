@@ -56,7 +56,7 @@ struct SourcesView: View {
 									: nil
 							)
 						}
-						.buttonStyle(.plain)
+						.buttonStyle(StorePressStyle())
 					}
 					
 					NBSection(
@@ -69,12 +69,13 @@ struct SourcesView: View {
 							} label: {
 								SourcesCellView(source: source)
 							}
-							.buttonStyle(.plain)
+							.buttonStyle(StorePressStyle())
 						}
 					}
 				}
 			}
-			.searchable(text: $_searchText, placement: .platform())
+			.storeScreen()
+            .searchable(text: $_searchText, placement: .platform())
 			.overlay {
 				if _filteredSources.isEmpty {
 					if #available(iOS 17, *) {

@@ -6,10 +6,13 @@
 //
 
 import SwiftUI
+import NimbleViews
 import AltSourceKit
 
 // MARK: - Representable
 struct SourceAppsTableRepresentableView: UIViewRepresentable {
+    @Environment(\.storeAppearance) private var appearance
+    @Environment(\.storeMotion) private var motion
 	var sourceContexts: [SourceAppsView.SourceRepositoryContext]
 	@Binding var searchText: String
 	@Binding var sortOption: SourceAppsView.SortOption
@@ -49,7 +52,7 @@ struct SourceAppsTableRepresentableView: UIViewRepresentable {
 		
 		tableView.alpha = 0
 		
-		UIView.transition(with: tableView,  duration: 0.5, options: [.transitionCrossDissolve], animations: {
+		UIView.transition(with: tableView,  duration: motion ? 0.22 : 0, options: [.transitionCrossDissolve], animations: {
 			tableView.alpha = 1
 		}, completion: nil)
 		
@@ -58,6 +61,11 @@ struct SourceAppsTableRepresentableView: UIViewRepresentable {
 	
 	func updateUIView(_ tableView: UITableView, context: Context) {
 		context.coordinator.uiTableView = tableView
+        if context.coordinator.appearance != appearance {
+            context.coordinator.appearance = appearance
+            tableView.backgroundColor = appearance == .professional ? .clear : .systemBackground
+            tableView.reloadData()
+        }
 		
 		let sourcesChanged = context.coordinator.sourceContexts != sourceContexts
 		let searchChanged = context.coordinator.searchText != searchText
@@ -88,6 +96,7 @@ struct SourceAppsTableRepresentableView: UIViewRepresentable {
 // MARK: - Representable Extension: Coordinator
 extension SourceAppsTableRepresentableView { class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate {
 	var sourceContexts: [SourceAppsView.SourceRepositoryContext]
+	var appearance = StoreAppearance.system
 	var searchText: String
 	var sortOption: SourceAppsView.SortOption
 	var sortAscending: Bool
@@ -229,10 +238,13 @@ extension SourceAppsTableRepresentableView { class Coordinator: NSObject, UITabl
 		case .date: entry = _groupedAppsByDate[_sortedSectionTitles[indexPath.section]]?[indexPath.row] ?? _sortedApps[indexPath.row]
 		}
 
+		let rowAppearance = appearance
+        cell.backgroundColor = appearance == .professional ? .clear : .systemBackground
 		cell.contentConfiguration = UIHostingConfiguration {
 			SourceAppsCellView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app) { [weak self] in
                 self?.onSelect(SourceAppsView.SourceAppRoute(sourceURL: entry.sourceURL, source: entry.source, app: entry.app))
             }
+            .environment(\.storeAppearance, rowAppearance)
 		}
 		return cell
 	}

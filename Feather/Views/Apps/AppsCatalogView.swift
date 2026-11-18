@@ -874,6 +874,7 @@ struct AppsCatalogView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var repositories: [SourceAppsView.SourceRepositoryContext] = AppsCatalogMemoryCache.shared.index?.repositories ?? []
+    @Environment(\.storeMotion) private var storeMotion
     @State private var searchText = ""
     @State private var selectedRoute: SourceAppsView.SourceAppRoute?
     @State private var isLoading = AppsCatalogMemoryCache.shared.index == nil
@@ -1179,7 +1180,7 @@ struct AppsCatalogView: View {
                                             }
                                         }
                                         .frame(height: 126)
-                                        Text(app.name).font(.headline).lineLimit(1)
+                                        Text(app.name).font(.headline).lineLimit(2)
                                         Text(AppDescriptionSanitizer.clean(app.subtitle ?? app.sourceId)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                         HStack {
                                             Text(app.version.map { "v\($0)" } ?? "API").font(.caption2)
@@ -1188,10 +1189,10 @@ struct AppsCatalogView: View {
                                         }
                                     }
                                     .foregroundStyle(.primary)
-                                    .padding(11)
-                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+                                    .padding(StoreTheme.inset)
+                                    .storeCard()
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(StorePressStyle())
                                 .onAppear {
                                     if apiApps.last?.id == app.id {
                                         Task { await loadAPIPage() }
@@ -1221,6 +1222,8 @@ struct AppsCatalogView: View {
 
                 }
             }
+            .storeScreen()
+            .animation(storeMotion ? StoreTheme.feedback : nil, value: searchText)
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -1551,12 +1554,12 @@ private struct AppsCatalogRecentUpdatesView: View {
                                                         Text(app.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
                                                         Text(AppDescriptionSanitizer.clean(app.subtitle ?? "تطبيق"))
                                                             .font(.caption).foregroundStyle(.secondary)
-                                                            .lineLimit(2).frame(height: 34, alignment: .topLeading)
+                                                            .lineLimit(2).frame(minHeight: 34, alignment: .topLeading)
                                                     }
                                                     .frame(maxWidth: .infinity, alignment: .leading)
                                                 }
                                             }
-                                            .buttonStyle(.plain)
+                                            .buttonStyle(StorePressStyle())
                                             HStack(spacing: 8) {
                                                 Image(systemName: "sparkles").font(.caption2).foregroundStyle(.secondary)
                                                 Text(app.version.map { "v\($0)" } ?? "Feather Store")
@@ -1571,8 +1574,8 @@ private struct AppsCatalogRecentUpdatesView: View {
                                                 .buttonStyle(.borderless)
                                             }
                                         }
-                                        .padding(11)
-                                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+                                        .padding(StoreTheme.inset)
+                                        .storeCard()
                                     }
                                 }
                             }
@@ -1595,7 +1598,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                     }
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .storeScreen(fallback: Color(uiColor: .systemGroupedBackground))
             .navigationTitle("التحديثات الأخيرة")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1657,13 +1660,13 @@ private struct AppsCatalogPremiumCard: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                            .frame(height: 34, alignment: .topLeading)
+                            .frame(minHeight: 34, alignment: .topLeading)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(StorePressStyle())
 
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
@@ -1678,16 +1681,8 @@ private struct AppsCatalogPremiumCard: View {
                     .scaleEffect(0.92)
             }
         }
-        .padding(11)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
-                }
-        }
-        .shadow(color: Color.black.opacity(0.07), radius: 14, y: 7)
+        .padding(StoreTheme.inset)
+        .storeCard()
         .accessibilityElement(children: .contain)
     }
 }

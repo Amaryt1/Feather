@@ -40,6 +40,7 @@ struct CertificatesInfoView: View {
 					}
 				}
 			}
+            .storeScreen()
 			.toolbar {
 				NBToolbarButton(role: .close)
 			}

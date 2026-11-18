@@ -63,8 +63,5 @@ struct AppearanceTintColorView: View {
 				}
 			}
 		}
-		.onChange(of: _selectedColorHex) { value in
-			UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: value))
-		}
 	}
 }

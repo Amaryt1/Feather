@@ -41,14 +41,16 @@ enum TabEnum: String, CaseIterable, Hashable {
 	@MainActor
 	@ViewBuilder
 	static func view(for tab: TabEnum) -> some View {
-		switch tab {
-		case .new: NewAppsView()
-		case .sources: SourcesView()
-		case .apps: AppsCatalogView()
-		case .library: LibraryView()
-		case .settings: SettingsView()
-		case .certificates: NBNavigationView(.localized("Certificates")) { CertificatesView() }
+		Group {
+            switch tab {
+            case .new: NewAppsView()
+            case .sources: SourcesView()
+            case .apps: AppsCatalogView()
+            case .library: LibraryView()
+            case .settings: SettingsView()
+            case .certificates: NBNavigationView(.localized("Certificates")) { CertificatesView() }
 		}
+        }.storeArrival()
 	}
 
 	static var defaultTabs: [TabEnum] {

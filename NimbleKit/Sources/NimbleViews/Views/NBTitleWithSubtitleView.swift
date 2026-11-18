@@ -8,6 +8,7 @@
 import SwiftUI
 
 public struct NBTitleWithSubtitleView: View {
+    @Environment(\.storeAppearance) private var appearance
 	private let _title: String
 	private let _subtitle: String
 	private var _linelimit: Int? = nil
@@ -19,16 +20,17 @@ public struct NBTitleWithSubtitleView: View {
 	}
 	
 	public var body: some View {
-		VStack(alignment: .leading, spacing: 2) {
+		VStack(alignment: .leading, spacing: 4) {
 			Text(_title)
 				.font(.headline)
-				.foregroundColor(.primary)
+				.foregroundColor(appearance == .professional ? StoreTheme.ink : .primary)
+                .lineLimit(_linelimit == 0 ? 2 : _linelimit)
 			Text(_subtitle)
 				.font(.subheadline)
-				.foregroundColor(.secondary)
+				.foregroundColor(appearance == .professional ? StoreTheme.muted : .secondary)
+                .lineLimit(_linelimit == 0 ? 2 : _linelimit)
 		}
 		.padding(.vertical, 2)
-		.lineLimit(_linelimit)
 		.frame(maxWidth: .infinity, alignment: .leading)
 	}
 }

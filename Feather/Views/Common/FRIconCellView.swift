@@ -11,6 +11,7 @@ import NimbleViews
 
 // MARK: - View
 struct FRIconCellView: View {
+	@Environment(\.storeMotion) private var motion
 	var title: String
 	var subtitle: String
 	var iconUrl: URL?
@@ -19,14 +20,17 @@ struct FRIconCellView: View {
 	
 	// MARK: Body
 	var body: some View {
-		HStack(spacing: 18) {
+		HStack(spacing: StoreTheme.inset) {
 			if let iconURL = iconUrl {
 				LazyImage(url: iconURL) { state in
-					if let image = state.image {
-						image.appIconStyle(size: size, isCircle: isCircle)
-					} else {
-						standardIcon
-					}
+					Group {
+                        if let image = state.image {
+                            image.appIconStyle(size: size, isCircle: isCircle).transition(.opacity)
+                        } else {
+                            standardIcon
+                        }
+                    }
+                    .animation(motion ? StoreTheme.feedback : nil, value: state.image != nil)
 				}
 			} else {
 				standardIcon

@@ -20,6 +20,7 @@ struct InstallPreviewView: View {
 	@State private var _isWebviewPresenting = false
 	@State private var progressTask: Task<Void, Never>?
 	
+	@Environment(\.storeMotion) private var motion
 	var app: AppInfoPresentable
 	@StateObject var viewModel: InstallerStatusViewModel
 	@StateObject var installer: ServerInstaller
@@ -50,7 +51,7 @@ struct InstallPreviewView: View {
 			_button()
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-		.background(Color(UIColor.secondarySystemBackground))
+		.storeCard(radius: cornerRadius)
 		.cornerRadius(cornerRadius)
 		.padding()
 		.sheet(isPresented: $_isWebviewPresenting) {
@@ -115,7 +116,7 @@ struct InstallPreviewView: View {
 			.padding()
 			.labelStyle(.titleAndIcon)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-			.animation(.smooth, value: viewModel.statusImage)
+			.animation(motion ? StoreTheme.feedback : nil, value: viewModel.statusImage)
 	}
 	
 	@ViewBuilder

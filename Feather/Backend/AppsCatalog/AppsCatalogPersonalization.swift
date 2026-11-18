@@ -9,6 +9,7 @@ import Foundation
 import Combine
 import UserNotifications
 import SwiftUI
+import NimbleViews
 
 struct AppsCatalogDownloadRecord: Codable, Identifiable {
     let id: String
@@ -120,6 +121,7 @@ struct AppsCatalogHistoryView: View {
                     }
                 }
             }
+            .storeScreen()
             .navigationTitle("سجل التحميلات")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -160,6 +162,7 @@ struct AppsCatalogDownloadsView: View {
                     }
                 }
             }
+            .storeScreen()
             .navigationTitle("مدير التحميلات")
         }
     }
@@ -174,18 +177,7 @@ private struct AppsCatalogDownloadRow: View {
             Text(download.fileName)
                 .font(.headline)
                 .lineLimit(1)
-            ProgressView(value: download.overallProgress)
-            HStack {
-                Text(download.isPaused ? "متوقف مؤقتاً" : "\(Int(download.overallProgress * 100))٪")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if download.totalBytes > 0 {
-                    Text("\(download.bytesDownloaded.formattedByteCount) / \(download.totalBytes.formattedByteCount)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            DownloadMetricsView(download: download)
             HStack {
                 Button {
                     if download.isPaused {
@@ -280,6 +272,7 @@ struct AppsCatalogSourcesStatusView: View {
                     }
                 }
             }
+            .storeScreen()
             .navigationTitle("صحة المصادر")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

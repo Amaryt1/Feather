@@ -11,6 +11,7 @@ import NimbleViews
 
 // MARK: - View
 struct LibraryCellView: View {
+    @Environment(\.storeAppearance) private var appearance
 	@Environment(\.horizontalSizeClass) private var horizontalSizeClass
 	@Environment(\.editMode) private var editMode
 	@ObservedObject private var updateManager = UpdateManager.shared
@@ -75,13 +76,14 @@ struct LibraryCellView: View {
 				_buttonActions(for: app)
 			}
 		}
-		.padding(isRegular ? 12 : 0)
+		.padding(isRegular ? StoreTheme.inset : 4)
 		.background(
 			isRegular
 				? RoundedRectangle(cornerRadius: 18, style: .continuous)
-				.fill(_isSelected && isEditing ? Color.accentColor.opacity(0.1) : Color(.quaternarySystemFill))
+				.fill(_isSelected && isEditing ? Color.accentColor.opacity(0.18) : (appearance == .professional ? StoreTheme.glass : Color(.quaternarySystemFill)))
 				: nil
 		)
+		.listRowBackground(appearance == .professional ? StoreTheme.glass.opacity(0.72) : nil)
 		.contentShape(Rectangle())
 		.onTapGesture {
 			if isEditing {

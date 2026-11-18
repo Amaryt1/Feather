@@ -6,10 +6,11 @@
 //
 
 import SwiftUI
+import NimbleViews
 import IDeviceSwift
 
 struct InstallProgressView: View {
-	@State private var _isPulsing = false
+	@Environment(\.storeMotion) private var motion
 	
 	var app: AppInfoPresentable
 	@ObservedObject var viewModel: InstallerStatusViewModel
@@ -21,26 +22,13 @@ struct InstallProgressView: View {
 					.fill(Color.accentColor.opacity(0.10))
 					.frame(width: 92, height: 92)
 					.blur(radius: 12)
-					.scaleEffect(_isPulsing ? 1.18 : 0.92)
-					.animation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true), value: _isPulsing)
 
-				Circle()
-					.stroke(Color.accentColor.opacity(0.14), lineWidth: 3)
-					.frame(width: 76, height: 76)
-
-				Circle()
-					.trim(from: 0, to: max(0.025, min(viewModel.overallProgress, 1)))
-					.stroke(
-						AngularGradient(colors: [.cyan, Color.accentColor, .purple, .cyan], center: .center),
-						style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
-					)
-					.rotationEffect(.degrees(-90))
-					.frame(width: 76, height: 76)
-					.animation(.spring(response: 0.45, dampingFraction: 0.82), value: viewModel.overallProgress)
+                StoreProgressRing(viewModel.overallProgress)
+                    .frame(width: 76, height: 76)
 
 			_appIcon()
-				.scaleEffect(_isPulsing && !viewModel.isCompleted ? 0.91 : 0.86)
-				.animation(.spring(response: 0.48, dampingFraction: 0.68), value: viewModel.isCompleted)
+				.scaleEffect(viewModel.isCompleted ? 0.92 : 0.86)
+				.animation(motion ? StoreTheme.feedback : nil, value: viewModel.isCompleted)
 				.overlay(alignment: .bottomTrailing) {
 					Image(systemName: viewModel.isCompleted ? "checkmark" : "arrow.down")
 						.font(.system(size: 10, weight: .bold))
@@ -52,7 +40,6 @@ struct InstallProgressView: View {
 				}
 			}
 			.frame(width: 100, height: 100)
-			.onAppear { _isPulsing = true }
 		}
 	}
 	
@@ -74,7 +61,7 @@ struct InstallProgressView: View {
 							.animation(.smooth, value: viewModel.isCompleted)
 					}
 				)
-				.animation(.smooth, value: viewModel.overallProgress)
+				.animation(motion ? StoreTheme.feedback : nil, value: viewModel.overallProgress)
 		}
 	}
 	

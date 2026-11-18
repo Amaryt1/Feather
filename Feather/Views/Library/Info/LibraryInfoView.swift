@@ -38,6 +38,7 @@ struct LibraryInfoView: View {
                     }
                 }
 			}
+            .storeScreen()
 			.toolbar {
 				NBToolbarButton(role: .close)
 			}

@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "Feather/Views/Apps/**"
+      - "NimbleKit/Sources/NimbleViews/**"
+      - "Tests/Appearance/**"
       - "Feather/Views/Sources/Apps/Detail/**"
       - "scripts/test_related_apps.py"
       - "Feather/Backend/AppsCatalog/**"
@@ -18,6 +20,8 @@ on:
     branches: [main]
     paths:
       - "Feather/Views/Apps/**"
+      - "NimbleKit/Sources/NimbleViews/**"
+      - "Tests/Appearance/**"
       - "Feather/Views/Sources/Apps/Detail/**"
       - "scripts/test_related_apps.py"
       - "Feather/Backend/AppsCatalog/**"
@@ -97,6 +101,11 @@ jobs:
             sudo xcode-select -s /Applications/Xcode_26.3.0.app
           fi
           xcodebuild -version
+
+      - name: Check store appearance compatibility and motion policy
+        run: |
+          swiftc NimbleKit/Sources/NimbleViews/Theme/StoreAppearance.swift Tests/Appearance/AppearanceTests.swift -o "$RUNNER_TEMP/appearance-tests"
+          "$RUNNER_TEMP/appearance-tests"
 
       - name: Test related app recommendations
         run: python3 scripts/test_related_apps.py

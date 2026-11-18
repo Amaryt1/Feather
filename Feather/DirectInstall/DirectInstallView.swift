@@ -1,6 +1,9 @@
 import SwiftUI
+import NimbleViews
 
 struct DirectInstallView: View {
+    @Environment(\.storeAppearance) private var appearance
+    @Environment(\.storeMotion) private var motion
     let input: DirectInput
     @Environment(\.dismiss) private var dismiss
     @StateObject private var engine = DirectEngine()
@@ -29,6 +32,16 @@ struct DirectInstallView: View {
         case .failed: return engine.message
         }
     }
+    private var stateIcon: String {
+        switch engine.phase {
+        case .idle, .preparing: "shippingbox"
+        case .downloading: "arrow.down.circle"
+        case .signing: "signature"
+        case .ready: "checkmark.seal"
+        case .submitting, .sent: "paperplane"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
     @ViewBuilder private var icon: some View {
         if let prepared = engine.preparedIcon {
             Image(uiImage: prepared).resizable().scaledToFit()
@@ -44,7 +57,12 @@ struct DirectInstallView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    icon.frame(width: 76, height: 76).clipShape(RoundedRectangle(cornerRadius: 16))
+                    ZStack {
+                        icon.frame(width: 68, height: 68).clipShape(RoundedRectangle(cornerRadius: 16))
+                        if engine.phase == .downloading, let value = engine.progress {
+                            StoreProgressRing(value).frame(width: 96, height: 96)
+                        }
+                    }.frame(height: 100)
                     Text(title).font(.title2.bold())
                     if let version { Text(version).foregroundStyle(.secondary) }
                     if engine.size > 0 { Text(ByteCountFormatter.string(fromByteCount: engine.size, countStyle: .file)).font(.caption) }
@@ -61,16 +79,18 @@ struct DirectInstallView: View {
                         }
                     }
                     else if [.preparing, .signing, .submitting].contains(engine.phase) { ProgressView() }
-                    Text(stateText).multilineTextAlignment(.center)
+                    Label(stateText, systemImage: stateIcon)
+                        .font(.body.weight(.medium)).multilineTextAlignment(.center)
+                        .foregroundStyle(engine.phase == .failed ? Color.red : (appearance == .professional ? StoreTheme.ink : Color.primary))
                     if engine.phase == .ready || engine.phase == .sent {
                         Button("تثبيت الآن") {
                             engine.submit()
-                        }.buttonStyle(.borderedProminent)
+                        }.buttonStyle(StoreActionStyle())
                     }
                     if engine.phase == .failed {
                         if engine.needsTrust { Button("إعدادات الثقة المحلية") { settings = true } }
                         if engine.needsCertificate { Button("فتح قسم الشهادات") { certificates = true } }
-                        Button("إعادة المحاولة") { engine.prepare(input) }.buttonStyle(.borderedProminent)
+                        Button("إعادة المحاولة") { engine.prepare(input) }.buttonStyle(StoreActionStyle())
                     }
                     if engine.phase == .sent {
                         Text(engine.servedPackage ? "وصل طلب قراءة IPA إلى الخادم المحلي." : "بانتظار طلب قراءة الحزمة. أبقِ المتجر مفتوحًا أثناء النقل.").font(.footnote)
@@ -78,8 +98,11 @@ struct DirectInstallView: View {
                     } else {
                         Button("إلغاء") { engine.cancel(); dismiss() }
                     }
-                }.frame(maxWidth: .infinity).padding()
+                }.frame(maxWidth: 520).padding(StoreTheme.inset).storeCard().padding()
+                    .frame(maxWidth: .infinity)
+                    .animation(motion ? StoreTheme.feedback : nil, value: engine.phase)
             }
+            .storeScreen()
             .navigationTitle("AMARYT Direct Install")
             .navigationBarTitleDisplayMode(.inline)
             .alert("إنهاء إتاحة الحزمة؟", isPresented: $confirmClose) {

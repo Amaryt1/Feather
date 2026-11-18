@@ -43,6 +43,7 @@ public struct NBList<Content>: View where Content: View {
 				}
 			}
 		}
+		.storeScreen()
 		.navigationTitle(_title)
 		.navigationBarTitleDisplayMode(_mode)
 	}

@@ -89,6 +89,7 @@ struct SettingsView: View {
 					Text(.localized("Reset the applications sources, certificates, apps, and general contents."))
 				}
 			}
+            .storeScreen()
 		}
 	}
 }

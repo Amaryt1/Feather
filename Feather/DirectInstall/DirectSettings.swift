@@ -1,4 +1,5 @@
 import SwiftUI
+import NimbleViews
 import UniformTypeIdentifiers
 
 enum DirectPreferences {
@@ -38,6 +39,7 @@ struct DirectSettingsView: View {
                 if !message.isEmpty { Text(message).font(.footnote) }
             }
         }
+        .storeScreen()
         .navigationTitle("AMARYT Direct Install")
         .fileExporter(isPresented: $exporting, document: profile, contentType: RootProfile.type,
                       defaultFilename: "AMARYT-Local.mobileconfig") { result in

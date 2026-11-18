@@ -226,7 +226,9 @@ UIImage* iconTest(NSURL *bundleURL, BOOL preservesOriginalColors) {
 		[NSUserDefaults.standardUserDefaults integerForKey:@"Feather.shouldChangeIconsBasedOffStyle"];
 
 	// Resolve "system / unspecified" dynamically
-	if (style == UIUserInterfaceStyleUnspecified) {
+	if (style == 3) { // Professional Neon uses dark artwork variants.
+        style = UIUserInterfaceStyleDark;
+    } else if (style == UIUserInterfaceStyleUnspecified) {
 		style = UIScreen.mainScreen.traitCollection.userInterfaceStyle;
 	}
 

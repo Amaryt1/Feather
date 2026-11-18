@@ -43,18 +43,11 @@ struct FeatherApp: App {
 					)
 				}
 			}
-			// dear god help me
-			.onAppear {
-				if let style = UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "Feather.userInterfaceStyle")) {
-					UIApplication.topViewController()?.view.window?.overrideUserInterfaceStyle = style
-				}
-				
-				UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: UserDefaults.standard.string(forKey: "Feather.userTintColor") ?? "#848ef9"))
-			}
                 if showWelcome {
                     AMARYTWelcomeView().transition(.opacity).zIndex(1)
                 }
             }
+            .modifier(StoreThemeHost())
             .task {
                 try? await Task.sleep(for: .seconds(2.5))
                 withAnimation(.easeOut(duration: 0.45)) { showWelcome = false }

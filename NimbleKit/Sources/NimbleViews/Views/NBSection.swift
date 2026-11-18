@@ -11,6 +11,7 @@ public struct NBSection<Content, Footer>: View
 	where 	Content: View,
 	Footer: View
 {
+	@Environment(\.storeAppearance) private var appearance
 	private var _headerText: String
 	private var _headerTextSecondary: String?
 	private var _systemName: String?
@@ -55,7 +56,7 @@ public struct NBSection<Content, Footer>: View
 				Text(_headerText)
 					.fontWeight(.bold)
 					.font(.title2)
-					.foregroundStyle(.primary)
+					.foregroundStyle(appearance == .professional ? StoreTheme.ink : Color.primary)
 						
 					
 				Spacer()
@@ -92,5 +93,6 @@ public struct NBSection<Content, Footer>: View
 			_content
 		}
 		.headerProminence(.increased)
+        .listRowBackground(appearance == .professional ? StoreTheme.glass.opacity(0.84) : nil)
 	}
 }

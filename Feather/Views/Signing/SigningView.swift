@@ -77,6 +77,7 @@ struct SigningView: View {
 				.ignoresSafeArea(edges: .bottom)
 			}
 
+            .storeScreen()
 			.toolbar {
 				NBToolbarButton(role: .dismiss)
 				ToolbarItem(placement: .principal) {

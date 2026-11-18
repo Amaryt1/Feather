@@ -42,6 +42,7 @@ struct CertificatesView: View {
 				_cellButton(for: cert, at: index)
 			}
 		}
+		.storeScreen()
 		.navigationTitle(.localized("Certificates"))
 		.overlay {
 			if _certificates.isEmpty {
@@ -108,10 +109,7 @@ extension CertificatesView {
 				cert: cert
 			)
 			.padding()
-			.background(
-				RoundedRectangle(cornerRadius: cornerRadius)
-					.fill(Color(uiColor: .quaternarySystemFill))
-			)
+			.storeCard(radius: cornerRadius)
 			.overlay(
 				RoundedRectangle(cornerRadius: cornerRadius)
 					.strokeBorder(
@@ -130,7 +128,7 @@ extension CertificatesView {
 				$0.animation = nil
 			}
 		}
-		.buttonStyle(.plain)
+		.buttonStyle(StorePressStyle())
 	}
 	
 	@ViewBuilder

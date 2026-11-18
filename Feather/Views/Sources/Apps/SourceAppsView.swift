@@ -107,7 +107,8 @@ struct SourceAppsView: View {
 				ProgressView()
 			}
 		}
-		.navigationTitle(_navigationTitle)
+		.storeScreen()
+        .navigationTitle(_navigationTitle)
 		.searchable(text: $_searchText, placement: .platform())
 		.toolbarTitleMenu {
 			if

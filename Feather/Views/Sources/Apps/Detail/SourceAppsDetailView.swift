@@ -219,6 +219,8 @@ struct SourceAppsDetailView: View {
 			}())
 		}
 		.flexibleHeaderScrollView()
+        .storeScreen()
+        .storeArrival()
 		.shouldSetInset()
 		.task(id: "\(sourceURL?.absoluteString ?? "")|\(app.currentUniqueId)") {
             relatedApps = []
@@ -294,11 +296,10 @@ struct SourceAppsDetailView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 .padding(10)
-                                .background(Color(uiColor: .secondarySystemGroupedBackground),
-                                            in: RoundedRectangle(cornerRadius: 16))
+                                .storeCard(radius: 16)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(StorePressStyle())
                         }
                     }
                 }
@@ -391,7 +392,7 @@ struct SourceAppsDetailView: View {
                 Text("تثبيت")
             }
             .disabled(isDirectInstallSigning || isDirectInstallDownloading)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(StoreActionStyle())
             Button {
                 importToLibrary()
             } label: {
