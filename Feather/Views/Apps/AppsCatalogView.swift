@@ -1301,7 +1301,7 @@ struct AppsCatalogView: View {
                 "version": version,
                 "downloadURL": url.absoluteString,
                 "iconURL": (item["iconURL"] as? String) ?? summary.iconURL ?? "",
-                "localizedDescription": AppDescriptionSanitizer.clean((item["localizedDescription"] as? String) ?? ""),
+                "localizedDescription": (item["localizedDescription"] as? String) ?? "",
                 "developerName": (item["developerName"] as? String) ?? summary.developerName ?? ""
             ]
             // Decode through AltSourceKit, preserving its normal version and ID semantics.
