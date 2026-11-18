@@ -168,80 +168,156 @@ struct FeatherApp: App {
 
 private struct AMARYTWelcomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var animate = false
+
+    private let gold = Color(red: 1, green: 0.76, blue: 0.19)
+    private let cyan = Color(red: 0.24, green: 0.79, blue: 1)
 
     var body: some View {
         GeometryReader { geometry in
             let side = min(geometry.size.width, geometry.size.height)
-            ZStack {
-                LinearGradient(colors: [
-                    Color(red: 0.015, green: 0.025, blue: 0.075),
-                    Color(red: 0.035, green: 0.055, blue: 0.14),
-                    Color(red: 0.11, green: 0.065, blue: 0.12)
-                ], startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.005, green: 0.008, blue: 0.035),
+                            Color(red: 0.02, green: 0.025, blue: 0.10),
+                            Color(red: 0.065, green: 0.025, blue: 0.09)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .ignoresSafeArea()
 
-                ForEach(0..<42, id: \.self) { index in
-                    let x = CGFloat((index * 73 + 19) % 101) / 100
-                    let y = CGFloat((index * 47 + 13) % 97) / 100
-                    Circle()
-                        .fill(Color.white.opacity(index.isMultiple(of: 4) ? 0.95 : 0.6))
-                        .frame(width: index.isMultiple(of: 5) ? 3 : 1.5,
-                               height: index.isMultiple(of: 5) ? 3 : 1.5)
-                        .opacity(animate && !reduceMotion ? (index.isMultiple(of: 3) ? 0.25 : 1) : 0.85)
-                        .position(x: x * geometry.size.width, y: y * geometry.size.height)
-                }
+                    Canvas { context, size in
+                        // Deterministic star field, with individual twinkling phases.
+                        for index in 0..<95 {
+                            let x = CGFloat((index * 83 + 17) % 997) / 997 * size.width
+                            let y = CGFloat((index * 137 + 71) % 991) / 991 * size.height
+                            let pulse = reduceMotion ? 0.8 : 0.5 + 0.5 * sin(time * (1.1 + Double(index % 5) * 0.31) + Double(index) * 1.7)
+                            let radius: CGFloat = index.isMultiple(of: 11) ? 1.8 : 0.8
+                            let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                            context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.18 + 0.78 * pulse)))
+                        }
 
-                VStack(spacing: 18) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.yellow.opacity(0.13))
-                            .frame(width: side * 0.42, height: side * 0.42)
-                            .blur(radius: 35)
-
-                        Image(systemName: "moon.stars.fill")
-                            .font(.system(size: side * 0.26, weight: .ultraLight))
-                            .foregroundStyle(
-                                LinearGradient(colors: [.white, Color(red: 1, green: 0.77, blue: 0.24)],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .shadow(color: .yellow.opacity(0.8), radius: 25)
-                            .rotationEffect(.degrees(animate && !reduceMotion ? -7 : 0))
-                            .accessibilityHidden(true)
-                    }
-                    .frame(height: side * 0.38)
-
-                    Text("AMARYT")
-                        .font(.system(size: min(side * 0.115, 60), weight: .black, design: .rounded))
-                        .tracking(3)
-                        .foregroundStyle(.white)
-
-                    Text("STORE")
-                        .font(.system(size: min(side * 0.052, 27), weight: .bold, design: .rounded))
-                        .tracking(9)
-                        .foregroundStyle(Color(red: 1, green: 0.77, blue: 0.24))
-
-                    HStack(spacing: 8) {
-                        ForEach(0..<3, id: \.self) { index in
-                            Circle()
-                                .fill(Color.yellow.opacity(animate && !reduceMotion && index == 1 ? 0.3 : 0.95))
-                                .frame(width: 6, height: 6)
+                        // Animated meteor trails that cross the scene.
+                        if !reduceMotion {
+                            for index in 0..<5 {
+                                let progress = (time * (0.23 + Double(index) * 0.035) + Double(index) * 0.29)
+                                    .truncatingRemainder(dividingBy: 1.0)
+                                let x = CGFloat(progress) * (size.width + 240) - 120
+                                let y = CGFloat((index * 29 + 12) % 85) / 100 * size.height
+                                var trail = Path()
+                                trail.move(to: CGPoint(x: x - 90, y: y - 42))
+                                trail.addLine(to: CGPoint(x: x, y: y))
+                                context.stroke(
+                                    trail,
+                                    with: .linearGradient(
+                                        Gradient(colors: [.clear, index.isMultiple(of: 2) ? gold.opacity(0.7) : cyan.opacity(0.8), .white]),
+                                        startPoint: CGPoint(x: x - 90, y: y - 42),
+                                        endPoint: CGPoint(x: x, y: y)
+                                    ),
+                                    style: StrokeStyle(lineWidth: 1.8, lineCap: .round)
+                                )
+                                context.fill(Path(ellipseIn: CGRect(x: x - 2, y: y - 2, width: 4, height: 4)),
+                                             with: .color(.white))
+                            }
                         }
                     }
-                    .padding(.top, 12)
-                    .accessibilityLabel("جاري فتح المتجر")
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .scaleEffect(animate && !reduceMotion ? 1.025 : 1)
-            }
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                    animate = true
+                    .allowsHitTesting(false)
+
+                    // Wide, soft energy bands behind the brand.
+                    Ellipse()
+                        .stroke(cyan.opacity(0.28), lineWidth: 2)
+                        .frame(width: side * 1.05, height: side * 0.29)
+                        .blur(radius: 12)
+                        .rotationEffect(.degrees(-20))
+                        .offset(y: side * 0.10)
+                    Ellipse()
+                        .stroke(gold.opacity(0.48), lineWidth: 1.5)
+                        .frame(width: side * 0.95, height: side * 0.24)
+                        .rotationEffect(.degrees(-20))
+                        .offset(y: side * 0.10)
+                        .shadow(color: gold, radius: 15)
+
+                    VStack(spacing: side * 0.035) {
+                        ZStack {
+                            Circle()
+                                .fill(gold.opacity(0.15))
+                                .frame(width: side * 0.42, height: side * 0.42)
+                                .blur(radius: 42)
+
+                            // A custom crescent outline, not an SF Symbol or image.
+                            CrescentNeonShape()
+                                .stroke(gold.opacity(0.20), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                                .blur(radius: 18)
+                            CrescentNeonShape()
+                                .stroke(gold.opacity(0.55), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                                .blur(radius: 6)
+                            CrescentNeonShape()
+                                .stroke(
+                                    LinearGradient(colors: [.white, gold, .orange],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                                    style: StrokeStyle(lineWidth: 3.3, lineCap: .round)
+                                )
+                                .shadow(color: gold, radius: 13)
+                        }
+                        .frame(width: side * 0.38, height: side * 0.42)
+                        .rotationEffect(.degrees(reduceMotion ? -12 : -12 + sin(time * 0.9) * 3))
+
+                        Text("AMARYT")
+                            .font(.system(size: min(side * 0.125, 68), weight: .black, design: .rounded))
+                            .tracking(3)
+                            .foregroundStyle(.white)
+                            .shadow(color: cyan.opacity(0.95), radius: 18)
+                            .shadow(color: gold.opacity(0.65), radius: 30)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+
+                        Text("S T O R E")
+                            .font(.system(size: min(side * 0.051, 28), weight: .heavy, design: .rounded))
+                            .foregroundStyle(gold)
+                            .shadow(color: gold.opacity(0.95), radius: 13)
+                            .shadow(color: gold.opacity(0.6), radius: 25)
+
+                        Capsule()
+                            .fill(
+                                LinearGradient(colors: [.clear, cyan, .white, gold, .clear],
+                                               startPoint: .leading, endPoint: .trailing)
+                            )
+                            .frame(width: side * 0.64, height: 2)
+                            .shadow(color: cyan, radius: 12)
+                            .padding(.top, 6)
+
+                        Text("WELCOME TO THE FUTURE")
+                            .font(.system(size: min(side * 0.023, 13), weight: .medium, design: .monospaced))
+                            .tracking(2)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .padding(.top, 5)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .combine)
+        .accessibilityLabel("AMARYT STORE، جاري فتح المتجر")
+    }
+}
+
+private struct CrescentNeonShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) * 0.42
+        // Outer arc and inset arc join into a luminous crescent silhouette.
+        path.addArc(center: center, radius: radius,
+                    startAngle: .degrees(65), endAngle: .degrees(290), clockwise: false)
+        let tip = CGPoint(x: center.x + radius * cos(65 * .pi / 180),
+                          y: center.y + radius * sin(65 * .pi / 180))
+        path.addQuadCurve(to: tip,
+                          control: CGPoint(x: center.x - radius * 0.05, y: center.y - radius * 0.08))
+        return path
     }
 }
 
