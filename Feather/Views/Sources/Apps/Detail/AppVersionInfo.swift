@@ -39,7 +39,9 @@ struct AppVersionInfo: View {
 			}
 			.padding(.vertical, 4)
             
-			ExpandableText(text: description, lineLimit: 3)
+			if !AppDescriptionSanitizer.clean(description).isEmpty {
+				ExpandableText(text: description, lineLimit: 3)
+			}
 		}
 		.frame(maxWidth: .infinity, alignment: .leading)
 	}
