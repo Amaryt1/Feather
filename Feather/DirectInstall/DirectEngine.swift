@@ -240,14 +240,14 @@ final class DirectEngine: ObservableObject {
     }
 
     func submit() {
-        guard phase == .ready, work == nil, let listener else { return }
+        guard (phase == .ready || phase == .sent), work == nil, let listener else { return }
         phase = .submitting
         work = Task {
             defer { work = nil }
             do {
-                background = UIApplication.shared.beginBackgroundTask(withName: "AMARYT Local Install") { [weak self] in
-                    Task { @MainActor in
-                        self?.endBackground()
+                if background == .invalid {
+                    background = UIApplication.shared.beginBackgroundTask(withName: "AMARYT Local Install") { [weak self] in
+                        Task { @MainActor in self?.endBackground() }
                     }
                 }
                 try await DirectHandoff.send(manifest: listener.manifest, enabled: DirectPreferences.enabled) { url in
