@@ -9,10 +9,12 @@ struct DirectInstallView: View {
     @State private var certificates = false
 
     private var title: String {
+        if let prepared = engine.preparedTitle { return prepared }
         switch input { case let .source(_, title, _, _): return title
         case let .signed(app): return app.name ?? "التطبيق" }
     }
     private var version: String? {
+        if let prepared = engine.preparedVersion { return prepared }
         switch input { case let .source(_, _, version, _): return version
         case let .signed(app): return app.version }
     }
@@ -28,13 +30,15 @@ struct DirectInstallView: View {
         }
     }
     @ViewBuilder private var icon: some View {
-        switch input {
+        if let prepared = engine.preparedIcon {
+            Image(uiImage: prepared).resizable().scaledToFit()
+        } else { switch input {
         case let .source(_, _, _, url):
             AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: {
                 Image("App_Unknown").resizable().scaledToFit()
             }
         case let .signed(app): FRAppIconView(app: app)
-        }
+        } }
     }
     var body: some View {
         NavigationStack {
@@ -91,6 +95,6 @@ struct DirectInstallView: View {
         }
         .interactiveDismissDisabled(engine.phase == .sent || engine.phase == .submitting)
         .onAppear { if engine.phase == .idle { engine.prepare(input) } }
-        .onDisappear { engine.cancel() }
+        .onDisappear { if !settings && !certificates { engine.cancel() } }
     }
 }

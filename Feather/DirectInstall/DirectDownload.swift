@@ -36,7 +36,7 @@ enum DirectDisk {
             throw DirectError("المساحة المتاحة لا تكفي لإكمال العملية.")
         }
     }
-    static func size(of url: URL) throws -> Int64 {
+    static func size(of url: URL) async throws -> Int64 {
         var result: Int64 = 0
         let fm = FileManager.default
         var enumerationError: Error?
@@ -46,6 +46,7 @@ enum DirectDisk {
             return false
         }) else { throw DirectError("تعذر قراءة ملفات الحزمة.") }
         for case let entry as URL in entries {
+            try Task.checkCancellation()
             let values = try entry.resourceValues(forKeys: Set(keys))
             if values.isRegularFile == true { result += Int64(values.fileSize ?? 0) }
         }

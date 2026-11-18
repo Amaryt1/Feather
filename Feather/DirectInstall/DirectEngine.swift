@@ -1,6 +1,14 @@
 import SwiftUI
-import CoreData
-import IDeviceSwift
+private struct StagedApp: AppInfoPresentable {
+    let identifier: String?
+    var name: String? { nil }
+    var version: String? { nil }
+    var date: Date? { nil }
+    var icon: String? { nil }
+    var uuid: String? { nil }
+    var source: URL? { nil }
+    var isSigned: Bool { false }
+}
 
 enum DirectInput {
     case source(URL?, String, String?, URL?)
@@ -22,6 +30,9 @@ final class DirectEngine: ObservableObject {
     private var archive: URL?
     private var metadata: DirectMetadata?
     private var listener: DirectLocalServer?
+    @Published var preparedTitle: String?
+    @Published var preparedVersion: String?
+    @Published var preparedIcon: UIImage?
     @Published var speed: Double = 0
     @Published var totalSize: Int64 = 0
     @Published var needsTrust = false
@@ -41,6 +52,16 @@ final class DirectEngine: ObservableObject {
 
     func prepare(_ input: DirectInput) {
         guard work == nil else { return }
+        if needsTrust, archive != nil, metadata != nil {
+            phase = .preparing
+            work = Task {
+                defer { work = nil }
+                do { try await checkListener() }
+                catch { fail(error); if Task.isCancelled { clean() } }
+            }
+            return
+        }
+        preparedTitle = nil; preparedVersion = nil; preparedIcon = nil
         clean()
         speed = 0; totalSize = 0; needsTrust = false; servedPackage = false
         progress = nil
@@ -65,26 +86,38 @@ final class DirectEngine: ObservableObject {
                     phase = .signing
                     try await signAndPack(ipa, cert: cert, folder: path)
                 case let .signed(app):
-                    try await pack(app, folder: path)
+                    guard app.isSigned, let directory = Storage.shared.getAppDirectory(for: app) else { throw DirectError("اختر تطبيقًا موقّعًا من المكتبة.") }
+                    try DirectDisk.require(try await DirectDisk.size(of: directory), at: path)
+                    let payload = path.appendingPathComponent("Payload")
+                    try FileManager.default.createDirectory(at: payload, withIntermediateDirectories: false)
+                    let copy = payload.appendingPathComponent(directory.lastPathComponent)
+                    try await Self.copyBundle(from: directory, to: copy)
+                    try await pack(copy, folder: path)
                 }
                 try Task.checkCancellation()
-                guard let archive, let metadata else { throw DirectError("تعذر تجهيز الحزمة.") }
-                size = Int64(try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
-                guard size > 0 else { throw DirectError("الحزمة فارغة.") }
-                let service = try DirectLocalServer(file: archive, metadata: metadata) { [weak self] in
-                    Task { @MainActor in self?.servedPackage = true }
-                }
-                do {
-                    try await service.checkTrust()
-                } catch {
-                    needsTrust = true
-                    throw DirectError("تعذر التحقق من HTTPS المحلي. افحص ملف الثقة من إعدادات المحرك. " + error.localizedDescription)
-                }
-                try Task.checkCancellation()
-                listener = service
-                phase = .ready
-            } catch { fail(error); clean() }
+                try await checkListener()
+            } catch {
+                fail(error)
+                if !needsTrust || Task.isCancelled { clean() }
+            }
         }
+    }
+
+    private func checkListener() async throws {
+        guard DirectPreferences.enabled, let archive, let metadata else { throw DirectError("تعذّر تجهيز التثبيت المحلي.") }
+        size = Int64(try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
+        guard size > 0 else { throw DirectError("الحزمة فارغة.") }
+        let service = try DirectLocalServer(file: archive, metadata: metadata) { [weak self] in
+            Task { @MainActor in self?.servedPackage = true }
+        }
+        do { try await service.checkTrust() } catch {
+            needsTrust = true
+            throw DirectError("تعذر التحقق من HTTPS المحلي. افحص ملف الثقة من إعدادات المحرك. " + error.localizedDescription)
+        }
+        try Task.checkCancellation()
+        needsTrust = false
+        listener = service
+        phase = .ready
     }
 
     private func certificate() throws -> CertificatePair {
@@ -148,72 +181,59 @@ final class DirectEngine: ObservableObject {
     }
 
     private func signAndPack(_ ipa: URL, cert: CertificatePair, folder: URL) async throws {
-        let importer = AppFileHandler(file: ipa)
-        defer { try? FileManager.default.removeItem(at: ipa) }
-        do {
-            try await importer.copy()
-            try await importer.extract()
-            try Task.checkCancellation()
-            try await importer.move()
-            try await importer.addToDatabase()
-            try await importer.clean()
-        } catch {
-            try? await importer.clean()
-            try? FileManager.default.removeItem(at: FileManager.default.unsigned(importer.importedUUID))
-            throw error
-        }
-        let request = NSFetchRequest<Imported>(entityName: "Imported")
-        request.predicate = NSPredicate(format: "uuid == %@", importer.importedUUID)
-        guard let imported = try Storage.shared.context.fetch(request).first else {
-            try? FileManager.default.removeItem(at: FileManager.default.unsigned(importer.importedUUID))
-            throw DirectError("لم تتضمن الحزمة تطبيقًا صالحًا.")
-        }
-        defer { Storage.shared.deleteApp(for: imported) }
+        let directory = try await Self.unpack(ipa, folder: folder)
+        try FileManager.default.removeItem(at: ipa)
         try Task.checkCancellation()
-        guard let appDir = Storage.shared.getAppDirectory(for: imported),
-              NSDictionary(contentsOf: appDir.appendingPathComponent("Info.plist")) != nil else { throw DirectError("ملف معلومات التطبيق غير صالح.") }
-        try DirectDisk.require(try DirectDisk.size(of: appDir), at: folder)
+        guard let id = Bundle(url: directory)?.bundleIdentifier,
+              NSDictionary(contentsOf: directory.appendingPathComponent("Info.plist")) != nil else {
+            throw DirectError("ملف معلومات التطبيق غير صالح.")
+        }
         var options = OptionsManager.shared.options
         options.signingOption = .default
         options.removeProvisioning = false
-        let signer = SigningHandler(app: imported, options: options)
-        signer.requireSigningResult = true
+        let signer = SigningHandler(app: StagedApp(identifier: id), options: options)
         signer.appCertificate = cert
-        let signedRequest = NSFetchRequest<Signed>(entityName: "Signed")
-        signedRequest.predicate = NSPredicate(format: "uuid == %@", signer.signedUUID)
-        defer {
-            if let record = try? Storage.shared.context.fetch(signedRequest).first { Storage.shared.deleteApp(for: record) }
-            else { try? FileManager.default.removeItem(at: FileManager.default.signed(signer.signedUUID)) }
-        }
         do {
-            try await signer.copy()
-            try await signer.modify()
+            try await signer.signStagedBundle(at: directory)
             try await signer.clean()
         } catch {
             try? await signer.clean()
+            needsCertificate = true
             throw error
         }
         try Task.checkCancellation()
-        guard let signed = try Storage.shared.context.fetch(signedRequest).first else { throw DirectError("تعذر قراءة نتيجة التوقيع.") }
-        try await pack(signed, folder: folder)
+        try await pack(directory, folder: folder)
     }
 
-    private func pack(_ app: AppInfoPresentable, folder: URL) async throws {
+    private nonisolated static func unpack(_ ipa: URL, folder: URL) async throws -> URL {
+        try await DirectArchive.unpack(ipa, in: folder) { try DirectDisk.require($0, at: folder) }
+    }
+
+    private nonisolated static func copyBundle(from source: URL, to destination: URL) async throws {
+        try FileManager.default.copyItem(at: source, to: destination)
+    }
+
+    private func pack(_ dir: URL, folder: URL) async throws {
         phase = .preparing
-        guard app.isSigned, let dir = Storage.shared.getAppDirectory(for: app),
-              let info = Bundle(url: dir)?.infoDictionary,
+        guard let info = NSDictionary(contentsOf: dir.appendingPathComponent("Info.plist")) as? [String: Any],
               let id = info["CFBundleIdentifier"] as? String, id != Bundle.main.bundleIdentifier,
               let version = info["CFBundleVersion"] as? String else { throw DirectError("تحقّق من توقيع الحزمة وملف التزويد. لا يمكن تحديث المتجر من نفسه.") }
         let profile = try DirectProfile.read(dir.appendingPathComponent("embedded.mobileprovision"))
         guard profile.permits(id) else {
+            needsCertificate = true
             throw DirectError("ملف التزويد لا يشمل معرّف التطبيق الموقّع.")
         }
-        try DirectDisk.require(try DirectDisk.size(of: dir), at: folder)
-        let metadata = DirectMetadata(title: app.name ?? id, bundle: id, version: version)
-        let handler = ArchiveHandler(app: app, viewModel: InstallerStatusViewModel(isIdevice: false), workDirectory: folder.appendingPathComponent("archive"))
-        try await handler.move()
-        try DirectDisk.require(try DirectDisk.size(of: dir), at: folder)
-        archive = try await handler.archive()
+        try DirectDisk.require(try await DirectDisk.size(of: dir), at: folder)
+        let title = info["CFBundleDisplayName"] as? String ?? info["CFBundleName"] as? String ?? id
+        let metadata = DirectMetadata(title: title, bundle: id, version: version)
+        preparedTitle = title
+        preparedVersion = info["CFBundleShortVersionString"] as? String ?? version
+        preparedIcon = await Task.detached(priority: .utility) { iconTest(dir, true) }.value
+        try Task.checkCancellation()
+        let destination = folder.appendingPathComponent("signed.ipa")
+        try await DirectArchive.pack(dir.deletingLastPathComponent(), to: destination)
+        try FileManager.default.removeItem(at: dir.deletingLastPathComponent())
+        archive = destination
         self.metadata = metadata
     }
 

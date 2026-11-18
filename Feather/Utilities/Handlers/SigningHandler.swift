@@ -28,7 +28,6 @@ final class SigningHandler: NSObject {
 	// to adhoc signing (if the option is on, otherwise
 	// throw an error
 	var appIcon: UIImage?
-	var requireSigningResult = false
 	var appCertificate: CertificatePair?
 	
 	init(app: AppInfoPresentable, options: Options = OptionsManager.shared.options) {
@@ -54,6 +53,16 @@ final class SigningHandler: NSObject {
 	}
 	
 	func modify() async throws {
+        try await _modify(publishToLibrary: true)
+    }
+
+    func signStagedBundle(at url: URL) async throws {
+        try _fileManager.createDirectoryIfNeeded(at: _uniqueWorkDir)
+        _movedAppPath = url
+        try await _modify(publishToLibrary: false)
+    }
+
+    private func _modify(publishToLibrary: Bool) async throws {
 		guard let movedAppPath = _movedAppPath else {
 			throw SigningFileHandlerError.appNotFound
 		}
@@ -116,7 +125,7 @@ final class SigningHandler: NSObject {
 			_options.signingOption == .default,
 			appCertificate != nil
 		{
-			try await handler.sign(requireResult: requireSigningResult)
+			try await handler.sign(requireResult: !publishToLibrary)
 //		} else if _options.signingOption == .adhoc {
 //			try await handler.adhocSign()
 		} else if _options.signingOption == .onlyModify {
@@ -125,8 +134,10 @@ final class SigningHandler: NSObject {
 			throw SigningFileHandlerError.missingCertifcate
 		}
 		
-		try await self.move()
-		try await self.addToDatabase()
+		if publishToLibrary {
+            try await self.move()
+            try await self.addToDatabase()
+        }
 		
 		if let error = handler.hadError {
 			throw error
