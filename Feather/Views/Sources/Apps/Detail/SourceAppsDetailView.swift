@@ -76,7 +76,7 @@ struct SourceAppsDetailView: View {
 							.font(.title2)
 							.fontWeight(.semibold)
 							.foregroundColor(.primary)
-						Text(app.currentDescription ?? .localized("An awesome application"))
+						Text(AppDescriptionSanitizer.clean(app.currentDescription ?? .localized("An awesome application")))
 							.font(.subheadline)
 							.foregroundColor(.secondary)
 						
@@ -129,7 +129,8 @@ struct SourceAppsDetailView: View {
 					Divider()
 				}
 				
-				if let appDesc = app.localizedDescription {
+				if let appDesc = app.localizedDescription,
+                   !AppDescriptionSanitizer.clean(appDesc).isEmpty {
 					NBSection(.localized("Description")) {
 						VStack(alignment: .leading, spacing: 2) {
 							ExpandableText(text: appDesc, lineLimit: 3)
@@ -234,7 +235,7 @@ struct SourceAppsDetailView: View {
 			) {
 				let sharedString = """
 				\(app.currentName) - \(app.currentVersion ?? "0")
-				\(app.currentDescription ?? .localized("An awesome application"))
+				\(AppDescriptionSanitizer.clean(app.currentDescription ?? .localized("An awesome application")))
 				---
 				\(source.website?.absoluteString ?? source.name ?? "")
 				"""
@@ -282,7 +283,7 @@ struct SourceAppsDetailView: View {
                                             .font(.headline)
                                             .foregroundStyle(.primary)
                                             .lineLimit(1)
-                                        Text(entry.app.currentDescription ?? entry.category.title)
+                                        Text(AppDescriptionSanitizer.clean(entry.app.currentDescription ?? entry.category.title))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                             .lineLimit(2)
