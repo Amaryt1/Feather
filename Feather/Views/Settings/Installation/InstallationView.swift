@@ -15,7 +15,8 @@ struct InstallationView: View {
 
 	private let _installationMethods: [String] = [
 		.localized("Server"),
-		.localized("idevice")
+		.localized("idevice"),
+		"AMARYT Direct Install"
 	]
 	
 	// MARK: Body
@@ -35,6 +36,8 @@ struct InstallationView: View {
 				ServerView()
 			} else if _installationMethod == 1 {
 				TunnelView()
+            } else if _installationMethod == DirectPolicy.method {
+                NavigationLink("إعدادات AMARYT Direct Install") { DirectSettingsView() }
 			}
 		}
 		.onChange(of: _installationMethod) { newValue in

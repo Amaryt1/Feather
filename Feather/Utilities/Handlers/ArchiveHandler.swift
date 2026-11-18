@@ -21,10 +21,10 @@ final class ArchiveHandler: NSObject {
 	private var _app: AppInfoPresentable
 	private let _uniqueWorkDir: URL
 	
-	init(app: AppInfoPresentable, viewModel: InstallerStatusViewModel) {
+	init(app: AppInfoPresentable, viewModel: InstallerStatusViewModel, workDirectory: URL? = nil) {
 		self.viewModel = viewModel
 		self._app = app
-		self._uniqueWorkDir = _fileManager.temporaryDirectory
+		self._uniqueWorkDir = workDirectory ?? _fileManager.temporaryDirectory
 			.appendingPathComponent("FeatherInstall_\(_uuid)", isDirectory: true)
 		
 		super.init()

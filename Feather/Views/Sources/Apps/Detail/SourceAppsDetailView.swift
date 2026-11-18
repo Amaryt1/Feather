@@ -15,6 +15,8 @@ import NukeUI
 // MARK: - SourceAppsDetailView
 struct SourceAppsDetailView: View {
     @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
+    @AppStorage("Feather.installationMethod") private var installationMethod = 0
+    @State private var showAMARYTInstall = false
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
     @State private var libraryImportDownloadID: String?
@@ -370,7 +372,9 @@ struct SourceAppsDetailView: View {
     private var storeActions: some View {
         HStack(spacing: 10) {
             Button {
-                if availableCertificates.isEmpty {
+                if installationMethod == DirectPolicy.method {
+                    showAMARYTInstall = true
+                } else if availableCertificates.isEmpty {
                     showCertificateAlert = true
                 } else {
                     startDirectInstall()
@@ -435,6 +439,9 @@ struct SourceAppsDetailView: View {
                   let uuid = notification.userInfo?["importedUUID"] as? String else { return }
             directInstallDownloadID = nil
             signDirectInstall(importedUUID: uuid)
+        }
+        .sheet(isPresented: $showAMARYTInstall) {
+            DirectInstallView(input: .source(app.currentDownloadUrl, app.currentName, app.currentVersion, app.iconURL))
         }
         .sheet(item: $directInstallPreview) { app in
             InstallPreviewView(app: app.base, isSharing: app.archive)

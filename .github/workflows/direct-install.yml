@@ -1,0 +1,28 @@
+name: Direct install validation
+on:
+  pull_request:
+    paths:
+      - 'Feather/**'
+      - 'Tests/DirectInstall/**'
+      - '.github/workflows/direct-install.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-tls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash Tests/DirectInstall/test-tls.sh
+  validate:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run policy and handoff tests
+        run: |
+          swiftc Feather/DirectInstall/DirectPolicy.swift Tests/DirectInstall/PolicyTests.swift -o "$RUNNER_TEMP/direct-tests"
+          "$RUNNER_TEMP/direct-tests"
+      - name: Build unsigned for iOS
+        run: xcodebuild -project Feather.xcodeproj -scheme Feather -configuration Debug -destination 'generic/platform=iOS' -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build

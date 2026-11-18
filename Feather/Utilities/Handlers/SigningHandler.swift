@@ -28,6 +28,7 @@ final class SigningHandler: NSObject {
 	// to adhoc signing (if the option is on, otherwise
 	// throw an error
 	var appIcon: UIImage?
+	var requireSigningResult = false
 	var appCertificate: CertificatePair?
 	
 	init(app: AppInfoPresentable, options: Options = OptionsManager.shared.options) {
@@ -115,7 +116,7 @@ final class SigningHandler: NSObject {
 			_options.signingOption == .default,
 			appCertificate != nil
 		{
-			try await handler.sign()
+			try await handler.sign(requireResult: requireSigningResult)
 //		} else if _options.signingOption == .adhoc {
 //			try await handler.adhocSign()
 		} else if _options.signingOption == .onlyModify {

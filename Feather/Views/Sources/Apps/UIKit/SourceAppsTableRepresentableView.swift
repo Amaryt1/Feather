@@ -234,7 +234,9 @@ extension SourceAppsTableRepresentableView { class Coordinator: NSObject, UITabl
 		}
 
 		cell.contentConfiguration = UIHostingConfiguration {
-			SourceAppsCellView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)
+			SourceAppsCellView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app) { [weak self] in
+                self?.onSelect(SourceAppsView.SourceAppRoute(sourceURL: entry.sourceURL, source: entry.source, app: entry.app))
+            }
 		}
 		return cell
 	}

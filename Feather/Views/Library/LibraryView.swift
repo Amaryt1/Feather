@@ -188,9 +188,13 @@ struct LibraryView: View {
 				LibraryInfoView(app: app.base)
 			}
 			.sheet(item: $_selectedInstallAppPresenting) { app in
-				InstallPreviewView(app: app.base, isSharing: app.archive)
-					.presentationDetents([.height(200)])
-					.presentationDragIndicator(.visible)
+				if !app.archive && UserDefaults.standard.integer(forKey: "Feather.installationMethod") == DirectPolicy.method {
+                    DirectInstallView(input: .signed(app.base))
+                } else {
+                    InstallPreviewView(app: app.base, isSharing: app.archive)
+                        .presentationDetents([.height(200)])
+                        .presentationDragIndicator(.visible)
+                }
 			}
 			.fullScreenCover(item: $_selectedSigningAppPresenting) { app in
 				SigningView(app: app.base)

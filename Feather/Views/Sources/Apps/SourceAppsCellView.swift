@@ -18,6 +18,9 @@ struct SourceAppsCellView: View {
 	let sourceURL: URL?
 	let source: ASRepository
 	let app: ASRepository.App
+    var openLocalDetails: (() -> Void)?
+    @AppStorage("Feather.installationMethod") private var method = 0
+    @State private var details = false
 	
 	var body: some View {
 		VStack {
@@ -38,7 +41,21 @@ struct SourceAppsCellView: View {
 						}
 					}
 				}
-				DownloadButtonView(sourceURL: sourceURL, source: source, app: app)
+				if method == DirectPolicy.method {
+                    Button(.localized("Get")) {
+                        if #available(iOS 17, *), let openLocalDetails { openLocalDetails() }
+                        else { details = true }
+                    }
+                    .buttonStyle(.bordered)
+                    .sheet(isPresented: $details) {
+                        NavigationStack {
+                            SourceAppsDetailView(sourceURL: sourceURL, source: source, app: app)
+                                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { details = false } } }
+                        }
+                    }
+                } else {
+                    DownloadButtonView(sourceURL: sourceURL, source: source, app: app)
+                }
 			}
 			
 			if
