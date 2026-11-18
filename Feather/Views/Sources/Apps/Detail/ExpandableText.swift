@@ -12,7 +12,7 @@ import SwiftUI
 // Only sanitize presentation text. Never rewrite repository data, metadata or IPA links.
 enum AppDescriptionSanitizer {
     private static let urlPattern = try! NSRegularExpression(
-        pattern: #"(?i)(?:\[[^\]]+\]\(\s*)?(?:https?://|ftp://|tg://|www\.)[^\s<>]+|(?<![\w@])(?:[a-z0-9-]+\.)+(?:com|net|org|me|io|gg|app|dev|co|tv|xyz|site|store|info|link|ru|us|uk|ps|ir|cn|de|fr)(?::\d+)?(?:/[^\s<>]*)?"#
+        pattern: #"(?i)(?:\[[^\]]+\]\(\s*)?(?:https?://|ftp://|tg://|www\.)[^\s<>]+|(?<![\w@])(?:[a-z0-9-]+\.)+[a-z]{2,24}(?::\d+)?(?:/[^\s<>]*)?"#
     )
     private static let emailPattern = try! NSRegularExpression(
         pattern: #"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b"#
@@ -21,7 +21,7 @@ enum AppDescriptionSanitizer {
         pattern: #"(?i)\b(?:giveaway|telegram\s+channel|discord\s+server|whatsapp\s+group|join\s+(?:our|the)\b|follow\s+us\b|subscribe\s+to\s+our\b|visit\s+our\s+(?:channel|website)|check\s+out\s+our\s+(?:channel|website)|promo\s+code|sponsored\s+by|support\s+us)\b|(?:تابعونا|اشتركوا|قناتنا|روابطنا|قناة\s*(?:تيليجرام|التليجرام|تلغرام|التلغرام)|انضموا\s+(?:إلى|الى)|سحب\s+على\s+شهاد|حقوق\s+النشر)"#
     )
     private static let creditLinePattern = try! NSRegularExpression(
-        pattern: #"(?i)^\s*(?:©|℗|\(c\)|copyright\b|all\s+rights\s+reserved\b|rights\s+reserved\b|credits?\s*[:：]|author\s*[:：]|made\s+by\b|developed\s+by\b|created\s+by\b|designed\s+by\b|powered\s+by\b|special\s+thanks\b|thanks\s+to\b|جميع\s+الحقوق|حقوق\s+النشر|الحقوق\s+محفوظة|تطوير\s+بواسطة|تم\s+التطوير\s+بواسطة|برمجة\s+بواسطة|تصميم\s+بواسطة|المطور\s*[:：])"#
+        pattern: #"(?i)^\s*(?:[•*\-–—]\s*)?(?:©|℗|\(c\)|copyright\b|all\s+rights\s+reserved\b|rights\s+reserved\b|credits?(?:\s+(?:to|goes?\s+to))?\s*[:：]?|author\s*[:：]|made\s+by\b|developed\s+by\b|created\s+by\b|designed\s+by\b|powered\s+by\b|special\s+thanks\b|thanks\s+to\b|جميع\s+الحقوق|حقوق\s+النشر|الحقوق\s+محفوظة|تطوير\s+بواسطة|تم\s+التطوير\s+بواسطة|برمجة\s+بواسطة|تصميم\s+بواسطة|المطور\s*[:：])"#
     )
     private static let trailingRightsPattern = try! NSRegularExpression(
         pattern: #"(?i)(?:©|℗|\bcopyright\b|\ball\s+rights\s+reserved\b|جميع\s+الحقوق\s+محفوظة|حقوق\s+النشر\s+محفوظة).*$"#
