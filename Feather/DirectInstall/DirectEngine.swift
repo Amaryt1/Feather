@@ -94,7 +94,7 @@ final class DirectEngine: ObservableObject {
             throw DirectError("أضف شهادة وحددها قبل التثبيت.")
         }
         guard !cert.revoked, Storage.shared.getFile(.certificate, from: cert) != nil,
-              let profile = Storage.shared.getProvisionFileDecoded(for: cert), profile.ExpirationDate > Date() else {
+              let file = Storage.shared.getFile(.provision, from: cert), (try? DirectProfile.read(file)) != nil else {
             needsCertificate = true
             throw DirectError("الشهادة أو ملف التزويد غير صالح أو منتهي الصلاحية.")
         }
@@ -203,13 +203,9 @@ final class DirectEngine: ObservableObject {
         guard app.isSigned, let dir = Storage.shared.getAppDirectory(for: app),
               let info = Bundle(url: dir)?.infoDictionary,
               let id = info["CFBundleIdentifier"] as? String, id != Bundle.main.bundleIdentifier,
-              let version = info["CFBundleVersion"] as? String,
-              let profile = CertificateReader(dir.appendingPathComponent("embedded.mobileprovision")).decoded,
-              profile.ExpirationDate > Date(),
-              let appID = profile.Entitlements?["application-identifier"]?.value as? String,
-              let split = appID.firstIndex(of: ".") else { throw DirectError("تحقّق من توقيع الحزمة وملف التزويد. لا يمكن تحديث المتجر من نفسه.") }
-        let pattern = String(appID[appID.index(after: split)...])
-        guard pattern == id || (pattern.hasSuffix("*") && id.hasPrefix(pattern.dropLast())) else {
+              let version = info["CFBundleVersion"] as? String else { throw DirectError("تحقّق من توقيع الحزمة وملف التزويد. لا يمكن تحديث المتجر من نفسه.") }
+        let profile = try DirectProfile.read(dir.appendingPathComponent("embedded.mobileprovision"))
+        guard profile.permits(id) else {
             throw DirectError("ملف التزويد لا يشمل معرّف التطبيق الموقّع.")
         }
         try DirectDisk.require(try DirectDisk.size(of: dir), at: folder)

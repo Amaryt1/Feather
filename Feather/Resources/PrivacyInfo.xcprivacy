@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>NSPrivacyAccessedAPITypes</key><array><dict>
+<key>NSPrivacyAccessedAPIType</key><string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+<key>NSPrivacyAccessedAPITypeReasons</key><array><string>E174.1</string></array>
+</dict></array></dict></plist>

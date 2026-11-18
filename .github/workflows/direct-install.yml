@@ -1,5 +1,7 @@
 name: Direct install validation
 on:
+  push:
+    branches: [feature/amaryt-direct-install-local]
   pull_request:
     paths:
       - 'Feather/**'
@@ -22,7 +24,7 @@ jobs:
           submodules: recursive
       - name: Run policy and handoff tests
         run: |
-          swiftc Feather/DirectInstall/DirectPolicy.swift Tests/DirectInstall/PolicyTests.swift -o "$RUNNER_TEMP/direct-tests"
+          swiftc Feather/DirectInstall/DirectPolicy.swift Feather/DirectInstall/DirectProfile.swift Tests/DirectInstall/PolicyTests.swift -o "$RUNNER_TEMP/direct-tests"
           "$RUNNER_TEMP/direct-tests"
       - name: Build unsigned for iOS
         run: xcodebuild -project Feather.xcodeproj -scheme Feather -configuration Debug -destination 'generic/platform=iOS' -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build

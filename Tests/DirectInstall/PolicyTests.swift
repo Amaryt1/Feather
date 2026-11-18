@@ -35,6 +35,19 @@ struct PolicyTests {
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
             return url.scheme == "itms-services" && query?.first(where: { $0.name == "url" })?.value == manifest.absoluteString
         }
+        let location = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: location) }
+        for expired in [false, true] {
+            let fields: [String: Any] = ["ExpirationDate": Date(timeIntervalSinceNow: expired ? -100 : 100),
+                                         "Entitlements": ["application-identifier": "TEAM.org.example.*"]]
+            let xml = try PropertyListSerialization.data(fromPropertyList: fields, format: .xml, options: 0)
+            try (Data([1, 2]) + xml + Data([3, 4])).write(to: location)
+            let profile = try? DirectProfile.read(location)
+            precondition((profile == nil) == expired)
+            if let profile {
+                precondition(profile.permits("org.example.game") && !profile.permits("org.other.game"))
+            }
+        }
         print("Direct install policy and handoff checks passed")
     }
 }
