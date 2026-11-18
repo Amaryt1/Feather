@@ -33,15 +33,8 @@ struct ExtendedTabbarView: View {
 				}
 			}
 			
-			ForEach(TabEnum.customizableTabs, id: \.hashValue) { tab in
-				Tab(tab.title, systemImage: tab.icon) {
-					TabEnum.view(for: tab)
-				}
-				.customizationID("tab.\(tab.rawValue)")
-				.defaultVisibility(.hidden, for: .tabBar)
-				.customizationBehavior(.reorderable, for: .tabBar, .sidebar)
-				.hidden(horizontalSizeClass == .compact)
-			}
+			// Certificates are managed from Settings > Certificates only.
+			// Do not add a customizable sidebar/tab entry on iPad.
 			
 			TabSection("Sources") {
 				Tab(.localized("All Repositories"), systemImage: "globe.desk") {
