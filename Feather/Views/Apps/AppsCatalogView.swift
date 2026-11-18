@@ -1180,7 +1180,7 @@ struct AppsCatalogView: View {
                                         }
                                         .frame(height: 126)
                                         Text(app.name).font(.headline).lineLimit(1)
-                                        Text(app.subtitle ?? app.sourceId).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        Text(AppDescriptionSanitizer.clean(app.subtitle ?? app.sourceId)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                         HStack {
                                             Text(app.version.map { "v\($0)" } ?? "API").font(.caption2)
                                             Spacer()
@@ -1301,7 +1301,7 @@ struct AppsCatalogView: View {
                 "version": version,
                 "downloadURL": url.absoluteString,
                 "iconURL": (item["iconURL"] as? String) ?? summary.iconURL ?? "",
-                "localizedDescription": (item["localizedDescription"] as? String) ?? "",
+                "localizedDescription": AppDescriptionSanitizer.clean((item["localizedDescription"] as? String) ?? ""),
                 "developerName": (item["developerName"] as? String) ?? summary.developerName ?? ""
             ]
             // Decode through AltSourceKit, preserving its normal version and ID semantics.
@@ -1549,7 +1549,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                                                     .frame(height: 126)
                                                     VStack(alignment: .leading, spacing: 4) {
                                                         Text(app.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
-                                                        Text(app.subtitle ?? "تطبيق")
+                                                        Text(AppDescriptionSanitizer.clean(app.subtitle ?? "تطبيق"))
                                                             .font(.caption).foregroundStyle(.secondary)
                                                             .lineLimit(2).frame(height: 34, alignment: .topLeading)
                                                     }
@@ -1652,7 +1652,7 @@ private struct AppsCatalogPremiumCard: View {
                             .font(.headline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        Text(entry.app.currentDescription ?? "تطبيق")
+                        Text(AppDescriptionSanitizer.clean(entry.app.currentDescription ?? "تطبيق"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -1837,7 +1837,7 @@ private struct AMARYTCatalogAppDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(app.name).font(.title2).bold()
-                    Text(descriptionText)
+                    Text(AppDescriptionSanitizer.clean(descriptionText))
                     if let downloadURL {
                         Link("فتح رابط IPA", destination: downloadURL)
                     }
