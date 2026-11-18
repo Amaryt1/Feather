@@ -369,6 +369,13 @@ struct SourceAppsDetailView: View {
         libraryImportDownloadID = download.id
     }
 
+    // Derive the busy state from live downloads, not a stale view-local ID.
+    // This also survives leaving the details screen and opening it again.
+    private var isDirectInstallDownloading: Bool {
+        guard let url = app.currentDownloadUrl else { return false }
+        return downloadManager.downloads.contains { $0.directInstall && $0.url == url }
+    }
+
     private var storeActions: some View {
         HStack(spacing: 10) {
             Button {
@@ -380,15 +387,9 @@ struct SourceAppsDetailView: View {
                     startDirectInstall()
                 }
             } label: {
-                if isDirectInstallSigning {
-                    Label("جارٍ التوقيع…", systemImage: "checkmark.shield")
-                } else if let id = directInstallDownloadID, downloadManager.getDownload(by: id) != nil {
-                    Label("جارٍ التنزيل…", systemImage: "arrow.down.circle")
-                } else {
-                    Text("تثبيت")
-                }
+                Text("تثبيت")
             }
-            .disabled(isDirectInstallSigning || directInstallDownloadID != nil)
+            .disabled(isDirectInstallSigning || isDirectInstallDownloading)
             .buttonStyle(.borderedProminent)
             Button {
                 importToLibrary()
