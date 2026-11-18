@@ -62,7 +62,7 @@ struct DirectInstallView: View {
                     }
                     else if [.preparing, .signing, .submitting].contains(engine.phase) { ProgressView() }
                     Text(stateText).multilineTextAlignment(.center)
-                    if engine.phase == .ready {
+                    if engine.phase == .ready || engine.phase == .sent {
                         Button("تثبيت الآن") {
                             engine.submit()
                         }.buttonStyle(.borderedProminent)
