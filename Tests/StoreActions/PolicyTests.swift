@@ -33,6 +33,16 @@ struct StoreActionTests {
         for (count, occupied, profile) in [(2, Set<String>(), exact), (0, [], wildcard), (102, [], wildcard)] {
             precondition((try? ClonePolicy.identifiers(base: base, count: count, occupied: occupied, profile: profile)) == nil)
         }
+        let importedID = "com.guohua.ciner"
+        let resolved = ClonePolicy.signingBase(original: importedID, manual: nil,
+                                               mappings: ["catalog.alias": "wrong"], ppqSuffix: nil, preferred: nil)
+        precondition(resolved == importedID)
+        let clone = try ClonePolicy.selectedCloneIdentifier(base: resolved!, selection: 2, occupied: [importedID])
+        precondition(clone == importedID + ".1")
+        let concurrent = try ClonePolicy.selectedCloneIdentifier(base: resolved!, selection: 2, occupied: [clone])
+        precondition(concurrent == importedID + ".2")
+        precondition(ClonePolicy.signingBase(original: importedID, manual: "com.custom", mappings: [importedID: "other"],
+                                             ppqSuffix: "suffix", preferred: nil) == "com.custom")
         let firstAdditional = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 2, occupied: [])
         precondition(firstAdditional == base + ".1")
         let nextAdditional = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 2, occupied: [base + ".1"])

@@ -12,7 +12,7 @@ final class CloneBatch: ObservableObject {
 
     func cancel() { task?.cancel(); stage = "جارٍ إيقاف التوقيع عند أقرب نقطة آمنة…" }
 
-    func start(app: AppInfoPresentable, options: Options, icon: UIImage?, certificate: CertificatePair?, count: Int, expected: [String]) {
+    func start(app: AppInfoPresentable, options: Options, icon: UIImage?, certificate: CertificatePair?, count: Int) {
         guard !running else { return }
         results = []
         stage = ""
@@ -20,22 +20,14 @@ final class CloneBatch: ObservableObject {
         task = Task {
             defer { running = false; task = nil }
             do {
-                _ = try await sign(app: app, options: options, icon: icon, certificate: certificate, count: count, expected: expected)
+                _ = try await sign(app: app, options: options, icon: icon, certificate: certificate, count: count)
                 stage = "اكتمل توقيع النسخة المطلوبة. يمكنك تثبيتها من المكتبة."
             } catch is CancellationError { stage = "أُلغي التوقيع. النسخ المكتملة محفوظة في المكتبة." }
             catch { stage = stage.isEmpty ? error.localizedDescription : stage + " — " + error.localizedDescription }
         }
     }
 
-    func sign(app: AppInfoPresentable, options: Options, icon: UIImage?, certificate: CertificatePair?, count: Int, expected: [String]? = nil) async throws -> [String] {
-        var held = Set<String>()
-        var uuids: [String] = []
-        defer {
-            if !held.isEmpty {
-                Self.reserved.subtract(held)
-                NotificationCenter.default.post(name: Self.reservationsChanged, object: nil)
-            }
-        }
+    func sign(app: AppInfoPresentable, options: Options, icon: UIImage?, certificate: CertificatePair?, count: Int, onReserved: (String) -> Void = { _ in }) async throws -> String {
         guard let base = options.appIdentifier ?? app.identifier, let certificate, !certificate.revoked,
               options.signingOption == .default,
               (certificate.expiration ?? .distantPast) > Date(),
@@ -47,29 +39,24 @@ final class CloneBatch: ObservableObject {
         // Avoid the stricter ClonePolicy/profile preflight, which blocked the
         // user's manual-valid IDs before the shared signer was even invoked.
         // The signing engine and iOS remain responsible for accepting the IPA.
-        let plan = try Self.plan(base: base, original: app.identifier, count: count)
-        if let expected, plan != expected {
-            throw DirectError("تغيرت معرّفات النسخ المتاحة. راجع المعاينة ثم أعد المحاولة.")
+        let target = try Self.nextIdentifier(base: base, count: count)
+        Self.reserved.insert(target)
+        defer {
+            Self.reserved.remove(target)
+            NotificationCenter.default.post(name: Self.reservationsChanged, object: nil)
         }
-        guard Self.reserved.isDisjoint(with: plan) else { throw DirectError("هذه النسخ قيد التوقيع بالفعل.") }
-        held = Set(plan)
-        Self.reserved.formUnion(held)
+        onReserved(target)
         NotificationCenter.default.post(name: Self.reservationsChanged, object: nil)
-        for id in plan {
-            try Task.checkCancellation()
-            stage = "توقيع النسخة الإضافية · \(id)"
-            var copy = options
-            copy.appIdentifier = id
-            // Do not override removeProvisioning or entitlements: manual
-            // signing must use the same caller-supplied options as this route.
-            let uuid = try await FR.signPackageFileAsync(app, using: copy, icon: icon, certificate: certificate)
-            results.append("✓ " + id)
-            uuids.append(uuid)
-        }
-        return uuids
+        try Task.checkCancellation()
+        stage = "توقيع النسخة الإضافية · " + target
+        var copy = options
+        copy.appIdentifier = target
+        let uuid = try await FR.signPackageFileAsync(app, using: copy, icon: icon, certificate: certificate)
+        results.append("✓ " + target)
+        return uuid
     }
 
-    static func plan(base: String, original: String?, count: Int) throws -> [String] {
+    static func nextIdentifier(base: String, count: Int) throws -> String {
         var occupied = Self.reserved
         for entity in ["Imported", "Signed"] {
             let request = NSFetchRequest<NSDictionary>(entityName: entity)
@@ -85,7 +72,7 @@ final class CloneBatch: ObservableObject {
         }
         guard count > 1 else { throw DirectError("النسخة الأصلية تُوقّع من المسار المعتاد.") }
         let target = try ClonePolicy.selectedCloneIdentifier(base: base, selection: count, occupied: occupied)
-        return [target]
+        return target
     }
 
     nonisolated static func validateIdentity(_ p12: URL, password: String, profile: URL) throws {
@@ -114,7 +101,7 @@ struct ClonePlanView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if !identifiers.isEmpty { Text("معرّف النسخة الإضافية التي سيتم تثبيتها").font(.caption) }
+            if !identifiers.isEmpty { Text("المعرّف المتاح حاليًا · يُحجز عند بدء التوقيع").font(.caption) }
             ForEach(identifiers, id: \.self) { id in
                 Text(verbatim: id).font(.caption.monospaced()).textSelection(.enabled)
             }
@@ -138,7 +125,7 @@ struct ClonePlanView: View {
                   let url = Storage.shared.getFile(.provision, from: certificate) else {
                 throw DirectError("اختر شهادة صالحة وملف تزويد للنسخ.")
             }
-            identifiers = try CloneBatch.plan(base: base, original: original, count: count)
+            identifiers = [try CloneBatch.nextIdentifier(base: base, count: count)]
             approved = identifiers
             issue = nil
             if let identifier = identifiers.first,

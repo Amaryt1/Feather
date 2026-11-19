@@ -18,13 +18,9 @@ struct SourceAppsDetailView: View {
     @AppStorage("Feather.installationMethod") private var installationMethod = 0
     @State private var copies = 1
     @AppStorage("feather.selectedCert") private var certificateIndex = 0
-    @State private var reviewedIDs: [String] = []
     @State private var cloneBase = ""
 
-    private var defaultCloneBase: String {
-        guard let id = app.id else { return "" }
-        return OptionsManager.shared.options.identifiers[id] ?? id
-    }
+
     @State private var showAMARYTInstall = false
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
@@ -312,7 +308,7 @@ struct SourceAppsDetailView: View {
         _ = downloadManager.startDownload(from: url, id: operationID,
             sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app),
             signingCertificate: certificate, copyCount: certificate == nil ? 1 : copies,
-            reviewedCloneIDs: copies > 1 ? reviewedIDs : nil, cloneBaseOverride: cloneBase.isEmpty ? nil : cloneBase)
+            cloneBaseOverride: cloneBase.isEmpty ? nil : cloneBase)
     }
 
     private func presentSigned(_ uuid: String) {
@@ -339,12 +335,11 @@ struct SourceAppsDetailView: View {
             Stepper(copies == 1 ? "تثبيت التطبيق الأصلي" : "تكرار التطبيق · النسخة الإضافية \(copies - 1)", value: $copies, in: 1...ClonePolicy.limit)
                 .disabled(busy || session != nil)
             if copies > 1 && !busy && session == nil {
-                TextField(defaultCloneBase.isEmpty ? "معرّف الحزمة الأساسي" : defaultCloneBase, text: $cloneBase)
+                TextField("تلقائي من ملف IPA، أو أدخل معرّفًا أساسيًا", text: $cloneBase)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
                     .accessibilityLabel("معرّف الحزمة الأساسي")
-                ClonePlanView(base: cloneBase.isEmpty ? defaultCloneBase : cloneBase, original: app.id, count: copies,
-                              certificate: availableCertificates.indices.contains(certificateIndex) ? availableCertificates[certificateIndex] : nil,
-                              approved: $reviewedIDs)
+                Text("بعد الاستيراد يُحجز أول معرّف متاح بدءًا من اللاحقة .\(copies - 1). تُوقّع نسخة إضافية واحدة.")
+                    .font(.caption)
                 Button("اختيار شهادة وملف تزويد") { showCertificates = true }
             }
             HStack(spacing: 10) {
@@ -361,7 +356,7 @@ struct SourceAppsDetailView: View {
                     }
                 } label: {
                     Text(session != nil ? "متابعة التثبيت" : "تثبيت")
-                }.disabled(busy || (session == nil && copies > 1 && reviewedIDs.count != 1)).buttonStyle(StoreActionStyle())
+                }.disabled(busy).buttonStyle(StoreActionStyle())
                 Button("استيراد إلى المكتبة") { start() }
                     .disabled(busy || session != nil).buttonStyle(.bordered)
             }
@@ -385,8 +380,14 @@ struct SourceAppsDetailView: View {
                 case .imported: Label("تمت الإضافة إلى المكتبة", systemImage: "checkmark")
                 case .signing:
                     ProgressView("جارٍ التوقيع")
+                    if let target = downloadManager.signingIdentifiers[operationID] {
+                        Text(verbatim: target).font(.caption.monospaced())
+                    }
                     Button("إلغاء التوقيع") { downloadManager.cancelSigning(operationID) }
-                case .ready: Label("جاهز للتثبيت", systemImage: "checkmark.seal")
+                case .ready(let uuid):
+                    Button { presentSigned(uuid) } label: {
+                        Label(signedCopy(uuid)?.identifier ?? "جاهز للتثبيت", systemImage: "checkmark.seal")
+                    }
                 case let .failed(message): Text(message).foregroundStyle(.red)
                 case .installed: Text("اكتمل التثبيت")
                 case .submitted: Text("تم إرسال طلب التثبيت إلى iOS")

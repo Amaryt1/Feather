@@ -40,13 +40,22 @@ struct StoreRelease: Codable, Hashable {
     }
 
     func verifyPackage(_ info: [String: Any], installed: Bundle = .main) throws {
-        guard let id = installed.bundleIdentifier, info["CFBundleIdentifier"] as? String == id,
-              info["CFBundleShortVersionString"] as? String == version, let actual = info["CFBundleVersion"] as? String,
-              (build.isEmpty || actual == build),
-              try required(over: installed.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+        try verifyMetadata(info, installedID: installed.bundleIdentifier)
+        guard try required(over: installed.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
                            build: installed.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") else {
-            throw DirectError("هوية الحزمة أو إصدارها لا يطابق تحديث المتجر المنشور.")
+            throw DirectError("الإصدار المثبّت لا يحتاج إلى هذا التحديث.")
         }
+    }
+
+    func verifyMetadata(_ info: [String: Any], installedID: String?) throws {
+        guard let id = installedID, info["CFBundleIdentifier"] as? String == id else {
+            throw DirectError("معرّف IPA لا يطابق معرّف المتجر المثبّت " + (installedID ?? "؟"))
+        }
+        let actual = info["CFBundleShortVersionString"] as? String ?? "؟"
+        guard actual == version else { throw DirectError("الإصدار داخل IPA هو " + actual + " والإصدار المنشور هو " + version + ". يجب تصحيح ملف الإصدار في لوحة الإدارة.") }
+        guard let actualBuild = info["CFBundleVersion"] as? String, !actualBuild.isEmpty,
+              build.isEmpty || actualBuild == build else { throw DirectError("رقم بناء IPA لا يطابق بيانات النشر.") }
+
     }
 }
 

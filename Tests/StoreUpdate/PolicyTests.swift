@@ -16,6 +16,12 @@ import Foundation
             let required = try policy.required(over: installed, build: build)
             precondition(required == expected)
         }
+        let info = ["CFBundleIdentifier": "com.amar.yt", "CFBundleShortVersionString": "2.9.2", "CFBundleVersion": "2"]
+        try release("2.9.2", "2").verifyMetadata(info, installedID: "com.amar.yt")
+        for (policy, id) in [(release("2.9.3"), "com.amar.yt"), (release("2.9.2", "3"), "com.amar.yt"),
+                             (release("2.9.2"), "other.app")] {
+            precondition((try? policy.verifyMetadata(info, installedID: id)) == nil)
+        }
         for checked in [false, true] {
             let required = release("3")
             precondition(StoreLaunchScreen(libraryReady: false, checked: checked, required: required) == .welcome)

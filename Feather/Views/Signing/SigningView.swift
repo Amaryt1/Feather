@@ -141,23 +141,11 @@ struct SigningView: View {
 		.onAppear {
 			guard !initializedOptions else { return }
             initializedOptions = true
-			// ppq protection
-			if
-				_optionsManager.options.ppqProtection,
-				let identifier = app.identifier,
-				let cert = _selectedCert(),
-				cert.ppQCheck
-			{
-				_temporaryOptions.appIdentifier = "\(identifier).\(_optionsManager.options.ppqString)"
-			}
-			
-			if
-				let currentBundleId = app.identifier,
-				let newBundleId = _temporaryOptions.identifiers[currentBundleId]
-			{
-				_temporaryOptions.appIdentifier = newBundleId
-			}
-			
+            let initial = _temporaryOptions.signingBase(for: app.identifier, certificate: _selectedCert())
+            if initial != app.identifier || _temporaryOptions.appIdentifier != nil {
+                _temporaryOptions.appIdentifier = initial
+            }
+
 			if
 				let currentName = app.name,
 				let newName = _temporaryOptions.displayNames[currentName]
@@ -287,7 +275,7 @@ extension SigningView {
 	private func _start() {
         if copies > 1 {
             showBatch = true
-            batch.start(app: app, options: _temporaryOptions, icon: appIcon, certificate: _selectedCert(), count: copies, expected: reviewedIDs)
+            batch.start(app: app, options: _temporaryOptions, icon: appIcon, certificate: _selectedCert(), count: copies)
             return
         }
 		guard

@@ -4,6 +4,15 @@ import CoreFoundation
 enum ClonePolicy {
     // One original selection + up to 100 individually signed additional apps.
     static let limit = 101
+
+    static func signingBase(original: String?, manual: String?, mappings: [String: String],
+                            ppqSuffix: String?, preferred: String?) -> String? {
+        if let manual { return manual }
+        guard let original else { return preferred }
+        if let mapped = mappings[original] { return mapped }
+        if let ppqSuffix { return original + "." + ppqSuffix }
+        return preferred ?? original
+    }
     static func identifiers(base: String, count: Int, occupied: Set<String>, profile: DirectProfile) throws -> [String] {
         let ids = try identifiers(base: base, count: count, occupied: occupied)
         try validate(ids, profile: profile)
