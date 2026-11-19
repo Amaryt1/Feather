@@ -42,7 +42,7 @@ extension SourceOperationKey {
 }
 
 enum SourceOutcome: Equatable {
-    case installed, submitted, imported, signing, ready(String), failed(String), cancelled
+    case installed, submitted, imported, signing, ready(String), copiesReady([String]), failed(String), cancelled
 }
 
 /// Active signing entries must survive navigation and history pruning.

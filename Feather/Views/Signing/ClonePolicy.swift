@@ -8,12 +8,41 @@ enum ClonePolicy {
               base.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({
                   !$0.isEmpty && $0.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
               }) else { throw DirectError("عدد النسخ أو معرّف التطبيق غير صالح.") }
+        var suffix = 0
         return try (1...count).map { index in
-            let id = index == 1 ? base : "\(base).clone\(index)"
-            guard profile.permits(id) else { throw DirectError("ملف التزويد لا يسمح بالمعرّف " + id) }
-            guard index == 1 || !occupied.contains(id) else { throw DirectError("المعرّف مستخدم بالفعل: " + id) }
+            var id = base
+            if index > 1 {
+                repeat {
+                    suffix += 1
+                    id = "\(base).\(suffix)"
+                } while occupied.contains(id)
+            }
+            guard profile.permits(id) else { throw DirectError("ملف التزويد يسمح بـ " + profile.Entitlements.applicationIdentifier + " ولا يغطي " + id + ". اختر شهادة بملف تزويد يغطي جميع معرّفات النسخ، أو وقّع نسخة واحدة بمعرّف مصرح به.") }
             return id
         }
+    }
+
+    static func claims(_ original: [String: Any], id: String, profile: DirectProfile, grants: [String: Any]) throws -> [String: Any] {
+        guard profile.permits(id), let prefix = profile.Entitlements.applicationIdentifier.split(separator: ".").first else {
+            throw DirectError("ملف التزويد لا يغطي " + id)
+        }
+        let identity = String(prefix) + "." + id
+        var result = original
+        result["application-identifier"] = identity
+        let teamKey = "com.apple.developer.team-identifier"
+        result[teamKey] = grants[teamKey]
+        // Development and distribution profiles control debugger access.
+        result["get-task-allow"] = grants["get-task-allow"]
+        if let groups = original["keychain-access-groups"] as? [String] {
+            let oldID = original["application-identifier"] as? String
+            result["keychain-access-groups"] = groups.map { $0 == oldID ? identity : $0 }
+        }
+        for (key, value) in result {
+            guard let grant = grants[key], permits(value, by: grant) else {
+                throw DirectError("ملف التزويد لا يسمح بالصلاحية " + key + " للتطبيق " + id)
+            }
+        }
+        return result
     }
 
     /// Match only an exact scalar or a trailing provisioning wildcard.

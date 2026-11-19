@@ -1293,19 +1293,21 @@ struct AppsCatalogView: View {
                                 Group { switch item {
                                 case .api(let app):
                                     VStack(alignment: .leading, spacing: 9) {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 20).fill(Color.accentColor.opacity(0.12))
-                                            if let icon = app.iconURL, let url = URL(string: icon) {
-                                                AsyncImage(url: url) { image in
-                                                    image.resizable().scaledToFit()
-                                                } placeholder: {
-                                                    Image(systemName: "app").foregroundStyle(.secondary)
+                                        Button { Task { await openAPIApp(app) } } label: {
+                                            ZStack {
+                                                RoundedRectangle(cornerRadius: 20).fill(Color.accentColor.opacity(0.12))
+                                                if let icon = app.iconURL, let url = URL(string: icon) {
+                                                    AsyncImage(url: url) { image in
+                                                        image.resizable().scaledToFit()
+                                                    } placeholder: {
+                                                        Image(systemName: "app").foregroundStyle(.secondary)
+                                                    }
+                                                    .frame(width: 76, height: 76)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 18))
                                                 }
-                                                .frame(width: 76, height: 76)
-                                                .clipShape(RoundedRectangle(cornerRadius: 18))
                                             }
-                                        }
-                                        .frame(height: 126)
+                                            .frame(height: 126).contentShape(Rectangle())
+                                        }.buttonStyle(.plain).accessibilityLabel("تفاصيل " + app.name)
                                         Text(app.name).font(.headline).lineLimit(2)
                                         Text(AppDescriptionSanitizer.clean(app.subtitle ?? app.sourceId)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                         HStack {
@@ -1606,7 +1608,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                                         }
                                         .foregroundStyle(.secondary)
                                         VStack(alignment: .leading, spacing: 11) {
-                                            Group {
+                                            Button { openAPI(app) } label: {
                                                 VStack(alignment: .leading, spacing: 10) {
                                                     ZStack(alignment: .topTrailing) {
                                                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1693,7 +1695,7 @@ private struct AppsCatalogPremiumCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
-            Group {
+            Button(action: open) {
                 VStack(alignment: .leading, spacing: 10) {
                     ZStack(alignment: .topTrailing) {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1741,7 +1743,7 @@ private struct AppsCatalogPremiumCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            }
+            }.buttonStyle(.plain)
 
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")

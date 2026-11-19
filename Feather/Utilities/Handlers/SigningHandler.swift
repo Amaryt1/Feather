@@ -66,8 +66,41 @@ final class SigningHandler: NSObject {
         try await _modify(publishToLibrary: true, cloneID: expectedID)
     }
 
+    private func prepareCloneEntitlements(at root: URL, rootID: String) throws {
+        guard let cert = appCertificate, let url = Storage.shared.getFile(.provision, from: cert),
+              let plist = try PropertyListSerialization.propertyList(from: DirectProfile.payload(url), format: nil) as? [String: Any],
+              let grants = plist["Entitlements"] as? [String: Any] else { throw DirectError("تعذّرت قراءة صلاحيات ملف التزويد.") }
+        let profile = try DirectProfile.read(url)
+        let paths = [root] + _enumerateFiles(at: root) { $0.hasSuffix(".app") || $0.hasSuffix(".appex") }
+        var byID: [String: [String: Any]] = [:]
+        for path in paths {
+            try Task.checkCancellation()
+            guard let info = NSDictionary(contentsOf: path.appendingPathComponent("Info.plist")),
+                  let id = info["CFBundleIdentifier"] as? String, byID[id] == nil,
+                  (path == root ? id == rootID : id.hasPrefix(rootID + ".")),
+                  let exe = info["CFBundleExecutable"] as? String, !exe.isEmpty, !exe.contains("/") else {
+                throw DirectError("معرّف غير صالح أو مكرر داخل " + path.lastPathComponent)
+            }
+            let input: Data?
+            if path == root, let custom = _options.appEntitlementsFile { input = try Data(contentsOf: custom) }
+            else { input = LCGetMachOEntitlements(path.appendingPathComponent(exe).path) }
+            var claims: [String: Any] = [:]
+            if let input, !input.isEmpty {
+                guard let parsed = try PropertyListSerialization.propertyList(from: input, format: nil) as? [String: Any] else {
+                    throw DirectError("تعذّرت قراءة صلاحيات " + id)
+                }
+                claims = parsed
+            }
+            byID[id] = try ClonePolicy.claims(claims, id: id, profile: profile, grants: grants)
+        }
+        let file = _uniqueWorkDir.appendingPathComponent("clone-entitlements.plist")
+        let data = try PropertyListSerialization.data(fromPropertyList: ["AMARYTCloneClaims": byID], format: .xml, options: 0)
+        try data.write(to: file, options: .atomic)
+        _options.appEntitlementsFile = file
+    }
+
     private func validateClone(_ root: URL, expectedID: String) throws {
-        guard Bundle(url: root)?.bundleIdentifier == expectedID,
+        guard NSDictionary(contentsOf: root.appendingPathComponent("Info.plist"))?["CFBundleIdentifier"] as? String == expectedID,
               let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else {
             throw DirectError("تعذّر التحقق من معرّف النسخة.")
         }
@@ -80,10 +113,10 @@ final class SigningHandler: NSObject {
             try Task.checkCancellation()
             let provisioning = url.appendingPathComponent("embedded.mobileprovision")
             let profile = try DirectProfile.read(provisioning)
-            guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier,
+            guard let info = NSDictionary(contentsOf: url.appendingPathComponent("Info.plist")), let id = info["CFBundleIdentifier"] as? String,
                   (id == expectedID || id.hasPrefix(expectedID + ".")), seen.insert(id).inserted,
-                  profile.permits(id), let exe = bundle.executableURL,
-                  let bytes = LCGetMachOEntitlements(exe.path),
+                  profile.permits(id), let exe = info["CFBundleExecutable"] as? String,
+                  let bytes = LCGetMachOEntitlements(url.appendingPathComponent(exe).path),
                   let claims = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any],
                   let prefix = profile.Entitlements.applicationIdentifier.split(separator: ".").first,
                   claims["application-identifier"] as? String == String(prefix) + "." + id,
@@ -145,7 +178,9 @@ final class SigningHandler: NSObject {
 		// iOS "26" (19) needs special treatment
 		try await _locateMachosAndFixupArm64eSlice(for: movedAppPath)
 		
-		if _options.mergeEntitlements && _options.appEntitlementsFile == nil {
+		if let cloneID {
+            try prepareCloneEntitlements(at: movedAppPath, rootID: cloneID)
+        } else if _options.mergeEntitlements && _options.appEntitlementsFile == nil {
 			try await _mergeEntitlements(for: movedAppPath, with: _options)
 		}
 		
@@ -372,12 +407,13 @@ extension SigningHandler {
 			if let extensionDict = (infoDict["NSExtension"] as? NSDictionary)?.mutableCopy() as? NSMutableDictionary {
 				// NSExtension → NSExtensionAttributes → WKAppBundleIdentifier
 				if
-					let attributes = extensionDict["NSExtensionAttributes"] as? NSMutableDictionary,
+					let attributes = (extensionDict["NSExtensionAttributes"] as? NSDictionary)?.mutableCopy() as? NSMutableDictionary,
 					let oldValue = attributes["WKAppBundleIdentifier"] as? String
 				{
 					let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
 					if oldValue != newValue {
 						attributes["WKAppBundleIdentifier"] = newValue
+                        extensionDict["NSExtensionAttributes"] = attributes
 						didChange = true
 					}
 				}
@@ -508,7 +544,7 @@ extension SigningHandler {
 			return 
 		}
 		
-		let ourTeamIdentifier = ourEntitlements.TeamIdentifier[0]
+		guard let ourTeamIdentifier = ourEntitlements.TeamIdentifier.first else { throw DirectError("ملف التزويد يفتقد معرّف الفريق.") }
 		let ourBundleIdentifer = options.appIdentifier ?? _app.identifier
 		
 		var baseDictionary: [String: Any] = (ourEntitlements.Entitlements ?? [:]).mapValues { $0.value }
