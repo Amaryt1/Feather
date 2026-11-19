@@ -2,8 +2,10 @@ import SwiftUI
 import Combine
 private struct StagedApp: AppInfoPresentable {
     let identifier: String?
-    var name: String? { nil }
-    var version: String? { nil }
+    var nameOverride: String? = nil
+    var versionOverride: String? = nil
+    var name: String? { nameOverride }
+    var version: String? { versionOverride }
     var date: Date? { nil }
     var icon: String? { nil }
     var uuid: String? { nil }
@@ -31,6 +33,9 @@ final class DirectEngine: ObservableObject {
     private var archive: URL?
     private var metadata: DirectMetadata?
     private var listener: DirectLocalServer?
+    private var updateServer: ServerInstaller?
+    private var updateServerStatus: InstallerStatusViewModel?
+    var storeUpdatePage: URL? { updateServer?.pageEndpoint }
     @Published var preparedTitle: String?
     @Published var preparedVersion: String?
     @Published var preparedIcon: UIImage?
@@ -85,7 +90,7 @@ final class DirectEngine: ObservableObject {
             defer { work = nil }
             do {
                 _ = Self.clearPreviousProcessFiles
-                guard DirectPreferences.enabled else { throw DirectError("المحرك متوقف في الإعدادات.") }
+                guard update != nil || DirectPreferences.enabled else { throw DirectError("المحرك متوقف في الإعدادات.") }
                 let path = FileManager.default.temporaryDirectory.appendingPathComponent("AMARYTDirect-" + UUID().uuidString)
                 try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
                 folder = path
@@ -113,12 +118,33 @@ final class DirectEngine: ObservableObject {
                     try await pack(copy, folder: path)
                 }
                 try Task.checkCancellation()
-                try await checkListener()
+                if update != nil { try prepareStoreUpdateServer() }
+                else { try await checkListener() }
             } catch {
                 fail(error)
                 if !needsTrust || Task.isCancelled { clean() }
             }
         }
+    }
+
+    // Store self-updates deliberately use the same ServerInstaller as ordinary installations.
+    // Do not alter the user's persisted installation settings or the other install engines.
+    private func prepareStoreUpdateServer() throws {
+        guard let archive, let metadata else { throw DirectError("تعذّر تجهيز تحديث المتجر.") }
+        guard archive.isFileURL, FileManager.default.fileExists(atPath: archive.path) else {
+            throw DirectError("ملف التحديث الموقّع غير موجود.")
+        }
+        guard UserDefaults.standard.integer(forKey: "Feather.serverMethod") == 1,
+              UserDefaults.standard.bool(forKey: "Feather.ipFix") else {
+            throw DirectError("يلزم اختيار Semi Local وتفعيل Use localhost only من إعدادات السيرفر.")
+        }
+        let status = InstallerStatusViewModel(isIdevice: false)
+        let app = StagedApp(identifier: metadata.bundle, nameOverride: metadata.title, versionOverride: metadata.version)
+        let server = try ServerInstaller(app: app, viewModel: status)
+        server.packageUrl = archive
+        updateServerStatus = status
+        updateServer = server
+        phase = .ready
     }
 
     private func checkListener() async throws {
@@ -268,7 +294,13 @@ final class DirectEngine: ObservableObject {
     }
 
     func submit() {
-        guard (phase == .ready || phase == .sent), work == nil, let listener else { return }
+        guard phase == .ready, work == nil else { return }
+        if updateServer != nil {
+            // The update UI presents the existing Semi Local Safari handoff page.
+            phase = .sent
+            return
+        }
+        guard let listener else { return }
         phase = .submitting
         work = Task {
             defer { work = nil }
@@ -302,6 +334,8 @@ final class DirectEngine: ObservableObject {
     private func clean() {
         endBackground()
         listener = nil
+        updateServer = nil
+        updateServerStatus = nil
         if let folder { try? FileManager.default.removeItem(at: folder) }
         folder = nil; archive = nil; metadata = nil
     }
