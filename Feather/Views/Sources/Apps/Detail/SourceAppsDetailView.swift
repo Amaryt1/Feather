@@ -16,15 +16,7 @@ import NukeUI
 struct SourceAppsDetailView: View {
     @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
     @AppStorage("Feather.installationMethod") private var installationMethod = 0
-    @State private var copies = 1
     @AppStorage("feather.selectedCert") private var certificateIndex = 0
-    @State private var reviewedIDs: [String] = []
-    @State private var cloneBase = ""
-
-    private var defaultCloneBase: String {
-        guard let id = app.id else { return "" }
-        return OptionsManager.shared.options.identifiers[id] ?? id
-    }
     @State private var showAMARYTInstall = false
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
@@ -311,8 +303,7 @@ struct SourceAppsDetailView: View {
         }
         _ = downloadManager.startDownload(from: url, id: operationID,
             sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app),
-            signingCertificate: certificate, copyCount: certificate == nil ? 1 : copies,
-            reviewedCloneIDs: copies > 1 ? reviewedIDs : nil, cloneBaseOverride: cloneBase.isEmpty ? nil : cloneBase)
+            signingCertificate: certificate)
     }
 
     private func presentSigned(_ uuid: String) {
@@ -336,24 +327,13 @@ struct SourceAppsDetailView: View {
         let session = localInstalls.sessions[operationID]
         let busy = download != nil || outcome == .signing
         return VStack(alignment: .leading, spacing: 6) {
-            Stepper(copies == 1 ? "تثبيت التطبيق الأصلي" : "تكرار التطبيق · النسخة الإضافية \(copies - 1)", value: $copies, in: 1...ClonePolicy.limit)
-                .disabled(busy || session != nil)
-            if copies > 1 && !busy && session == nil {
-                TextField(defaultCloneBase.isEmpty ? "معرّف الحزمة الأساسي" : defaultCloneBase, text: $cloneBase)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("معرّف الحزمة الأساسي")
-                ClonePlanView(base: cloneBase.isEmpty ? defaultCloneBase : cloneBase, original: app.id, count: copies,
-                              certificate: availableCertificates.indices.contains(certificateIndex) ? availableCertificates[certificateIndex] : nil,
-                              approved: $reviewedIDs)
-                Button("اختيار شهادة وملف تزويد") { showCertificates = true }
-            }
             HStack(spacing: 10) {
                 Button {
-                    if session != nil || (copies == 1 && installationMethod == DirectPolicy.method) {
+                    if session != nil || installationMethod == DirectPolicy.method {
                         localInstalls.open(operationID, input: .source(app.currentDownloadUrl, app.currentName,
                                                                       app.currentVersion, app.iconURL))
                         showAMARYTInstall = true
-                    } else if copies == 1, case let .ready(uuid) = outcome { presentSigned(uuid) }
+                    } else if case let .ready(uuid) = outcome { presentSigned(uuid) }
                     else {
                         let index = UserDefaults.standard.integer(forKey: "feather.selectedCert")
                         if availableCertificates.indices.contains(index) { start(certificate: availableCertificates[index]) }
@@ -361,7 +341,7 @@ struct SourceAppsDetailView: View {
                     }
                 } label: {
                     Text(session != nil ? "متابعة التثبيت" : "تثبيت")
-                }.disabled(busy || (session == nil && copies > 1 && reviewedIDs.count != 1)).buttonStyle(StoreActionStyle())
+                }.disabled(busy).buttonStyle(StoreActionStyle())
                 Button("استيراد إلى المكتبة") { start() }
                     .disabled(busy || session != nil).buttonStyle(.bordered)
             }
