@@ -1320,7 +1320,7 @@ struct AppsCatalogView: View {
                 return
             }
             selectedRoute = SourceAppsView.SourceAppRoute(
-                sourceURL: AMARYTCatalogAPI.baseURL, source: repository, app: app
+                sourceURL: (item["sourceURL"] as? String).flatMap { URL(string: $0) }, source: repository, app: app
             )
             apiError = nil
         } catch {

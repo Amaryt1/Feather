@@ -1,12 +1,60 @@
 import SwiftUI
 import NimbleViews
 
+@MainActor
+final class SourceDirectSessions: ObservableObject {
+    struct Session {
+        let input: DirectInput
+        let engine: DirectEngine
+    }
+    static let shared = SourceDirectSessions()
+    @Published private(set) var sessions: [String: Session] = [:]
+    func open(_ id: String, input: DirectInput) {
+        guard sessions[id] == nil, DownloadManager.shared.getDownload(by: id) == nil,
+              DownloadManager.shared.outcomes[id] != .signing else { return }
+        DownloadManager.shared.localSessionIDs.insert(id)
+        DownloadManager.shared.outcomes[id] = nil
+        sessions[id] = Session(input: input, engine: DirectEngine())
+    }
+    func close(_ id: String) {
+        guard let session = sessions.removeValue(forKey: id) else { return }
+        DownloadManager.shared.localSessionIDs.remove(id)
+        DownloadManager.shared.outcomes[id] = session.engine.phase == .sent ? .submitted : .cancelled
+        session.engine.cancel()
+    }
+}
+
+struct DirectSessionStatus: View {
+    @ObservedObject var engine: DirectEngine
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(engine.statusText)
+            if engine.phase == .downloading {
+                ProgressView(value: engine.progress)
+                if let fraction = engine.progress { Text(fraction.formatted(.percent)) }
+            }
+        }
+    }
+}
+
 struct DirectInstallView: View {
     @Environment(\.storeAppearance) private var appearance
     @Environment(\.storeMotion) private var motion
     let input: DirectInput
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var engine = DirectEngine()
+    @StateObject private var engine: DirectEngine
+    let endSession: (() -> Void)?
+
+    init(input: DirectInput, sharedEngine: DirectEngine? = nil, endSession: (() -> Void)? = nil) {
+        self.input = input
+        self.endSession = endSession
+        _engine = StateObject(wrappedValue: sharedEngine ?? DirectEngine())
+    }
+
+    private func finish() {
+        if let endSession { endSession() } else { engine.cancel() }
+        dismiss()
+    }
     @State private var settings = false
     @State private var confirmClose = false
     @State private var certificates = false
@@ -20,17 +68,6 @@ struct DirectInstallView: View {
         if let prepared = engine.preparedVersion { return prepared }
         switch input { case let .source(_, _, version, _): return version
         case let .signed(app): return app.version }
-    }
-    private var stateText: String {
-        switch engine.phase {
-        case .idle, .preparing: return "جارٍ تجهيز التثبيت…"
-        case .downloading: return "جارٍ تنزيل IPA…"
-        case .signing: return "جارٍ توقيع التطبيق على جهازك…"
-        case .ready: return "الحزمة موقّعة وجاهزة للتثبيت"
-        case .submitting: return "جارٍ إرسال طلب التثبيت…"
-        case .sent: return "تم إرسال طلب التثبيت إلى iOS"
-        case .failed: return engine.message
-        }
     }
     private var stateIcon: String {
         switch engine.phase {
@@ -79,7 +116,7 @@ struct DirectInstallView: View {
                         }
                     }
                     else if [.preparing, .signing, .submitting].contains(engine.phase) { ProgressView() }
-                    Label(stateText, systemImage: stateIcon)
+                    Label(engine.statusText, systemImage: stateIcon)
                         .font(.body.weight(.medium)).multilineTextAlignment(.center)
                         .foregroundStyle(engine.phase == .failed ? Color.red : (appearance == .professional ? StoreTheme.ink : Color.primary))
                     if engine.phase == .ready || engine.phase == .sent {
@@ -96,7 +133,8 @@ struct DirectInstallView: View {
                         Text(engine.servedPackage ? "وصل طلب قراءة IPA إلى الخادم المحلي." : "بانتظار طلب قراءة الحزمة. أبقِ المتجر مفتوحًا أثناء النقل.").font(.footnote)
                         Button("إنهاء المشاركة المحلية") { confirmClose = true }
                     } else {
-                        Button("إلغاء") { engine.cancel(); dismiss() }
+                        if endSession != nil { Button("متابعة في المتجر") { dismiss() } }
+                        Button("إلغاء") { finish() }
                     }
                 }.frame(maxWidth: 520).padding(StoreTheme.inset).storeCard().padding()
                     .frame(maxWidth: .infinity)
@@ -106,7 +144,7 @@ struct DirectInstallView: View {
             .navigationTitle("AMARYT Direct Install")
             .navigationBarTitleDisplayMode(.inline)
             .alert("إنهاء إتاحة الحزمة؟", isPresented: $confirmClose) {
-                Button("إنهاء", role: .destructive) { engine.cancel(); dismiss() }
+                Button("إنهاء", role: .destructive) { finish() }
                 Button("متابعة المشاركة", role: .cancel) {}
             } message: { Text("إذا كان iOS ما زال يقرأ الملف، فقد يتوقف التثبيت.") }
             .sheet(isPresented: $settings) { NavigationStack { DirectSettingsView().toolbar {
@@ -118,6 +156,20 @@ struct DirectInstallView: View {
         }
         .interactiveDismissDisabled(engine.phase == .sent || engine.phase == .submitting)
         .onAppear { if engine.phase == .idle { engine.prepare(input) } }
-        .onDisappear { if !settings && !certificates { engine.cancel() } }
+        .onDisappear { if endSession == nil && !settings && !certificates { engine.cancel() } }
+    }
+}
+
+extension DirectEngine {
+    var statusText: String {
+        switch phase {
+        case .idle, .preparing: return "جارٍ تجهيز التثبيت…"
+        case .downloading: return "جارٍ تنزيل IPA…"
+        case .signing: return "جارٍ توقيع التطبيق على جهازك…"
+        case .ready: return "الحزمة موقّعة وجاهزة للتثبيت"
+        case .submitting: return "جارٍ إرسال طلب التثبيت…"
+        case .sent: return "تم إرسال طلب التثبيت إلى iOS"
+        case .failed: return message
+        }
     }
 }

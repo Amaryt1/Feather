@@ -27,7 +27,7 @@ struct NewAppsView: View {
                     ScrollView {
                         LazyVStack(spacing: 16) {
                             ForEach(repository.apps, id: \.currentUniqueId) { app in
-                                NewAppFeatureCard(app: app) {
+                                NewAppFeatureCard(app: app, operationID: SourceOperationKey.make(sourceURL: AMARYTStoreFeed.url, repository: repository, app: app).id) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
                                         sourceURL: AMARYTStoreFeed.url,
                                         source: repository,
@@ -63,7 +63,7 @@ struct NewAppsView: View {
             }
             .storeScreen(fallback: Color(uiColor: .systemGroupedBackground))
             .navigationTitle("جديد")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .navigationDestinationIfAvailable(item: $selectedRoute) { route in
                 SourceAppsDetailView(sourceURL: route.sourceURL, source: route.source, app: route.app)
             }
@@ -151,6 +151,7 @@ struct NewAppsView: View {
 private struct NewAppFeatureCard: View {
     @Environment(\.storeAppearance) private var appearance
     let app: ASRepository.App
+    let operationID: String
     let open: () -> Void
 
     @State private var sampledColor: Color?
@@ -346,7 +347,7 @@ private struct NewAppFeatureCard: View {
 
             Spacer()
 
-            Text("التفاصيل")
+            SourceActivityLabel(id: operationID, idle: "التفاصيل")
                 .fontWeight(.semibold)
 
             Image(systemName: "chevron.forward")

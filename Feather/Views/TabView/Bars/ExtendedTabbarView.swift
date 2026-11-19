@@ -14,10 +14,8 @@ import NukeUI
 struct ExtendedTabbarView: View {
     @Environment(\.storeAppearance) private var appearance
 	@Environment(\.horizontalSizeClass) var horizontalSizeClass
-	@Environment(\.scenePhase) private var scenePhase
 	@AppStorage("Feather.tabCustomization") var customization = TabViewCustomization()
 	@StateObject var viewModel = SourcesViewModel.shared
-	@State private var tabViewID = UUID()
 	
 	@State private var _isAddingPresenting = false
 	
@@ -68,15 +66,9 @@ struct ExtendedTabbarView: View {
 			.defaultVisibility(.hidden, for: .tabBar)
 			.hidden(true)
 		}
-		.toolbarBackground(appearance == .professional ? AnyShapeStyle(StoreTheme.midnight) : AnyShapeStyle(.bar), for: .tabBar)
+		.toolbarBackground(appearance == .professional ? .hidden : .automatic, for: .tabBar)
 		.tabViewStyle(.sidebarAdaptable)
 		.tabViewCustomization($customization)
-		.id(tabViewID)
-		.onChange(of: scenePhase) { phase in
-			if phase == .active {
-				tabViewID = UUID()
-			}
-		}
 		.sheet(isPresented: $_isAddingPresenting) {
 			SourcesAddView()
 				.presentationDetents([.medium])

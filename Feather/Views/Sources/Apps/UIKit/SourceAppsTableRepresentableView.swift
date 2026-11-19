@@ -320,7 +320,7 @@ extension SourceAppsTableRepresentableView { class Coordinator: NSObject, UITabl
 					if let url {
 						_ = DownloadManager.shared.startDownload(
 							from: url,
-							id: entry.app.currentUniqueId,
+							id: SourceOperationKey.make(sourceURL: entry.sourceURL, repository: entry.source, app: entry.app, version: version).id,
 							sourceProvenance: SourceAppProvenance(
 								sourceURL: entry.sourceURL,
 								repository: entry.source,

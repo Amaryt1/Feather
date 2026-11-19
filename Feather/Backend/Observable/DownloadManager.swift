@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import CoreData
 import UIKit.UIImpactFeedbackGenerator
 import BackgroundTasks
 
@@ -31,7 +32,11 @@ class Download: ObservableObject, Identifiable, @unchecked Sendable {
 	let fileName: String
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
-    var directInstall = false
+    var signingCertificate: CertificatePair?
+    @Published var packaging = false
+    var sampleTime = ProcessInfo.processInfo.systemUptime
+    var sampleBytes: Int64 = 0
+    @Published var bytesPerSecond: Int64 = 0
     var importedUUID: String?
 	
 	init(
@@ -51,6 +56,8 @@ class Download: ObservableObject, Identifiable, @unchecked Sendable {
 class DownloadManager: NSObject, ObservableObject {
 	static let shared = DownloadManager()
 	
+	@Published var outcomes = SourceOutcomes()
+    var localSessionIDs = Set<String>()
 	@Published var downloads: [Download] = []
 	
 	var manualDownloads: [Download] {
@@ -74,25 +81,27 @@ class DownloadManager: NSObject, ObservableObject {
 	override init() {
 		super.init()
 		let configuration = URLSessionConfiguration.default
-		_session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+		_session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
 	}
 	
 	func startDownload(
 		from url: URL,
 		id: String = UUID().uuidString,
-		sourceProvenance: SourceAppProvenance? = nil
-	) -> Download {
-		let requestHasSourceProvenance = sourceProvenance != nil
-		if let existingDownload = downloads.first(where: {
-			$0.url == url && ($0.sourceProvenance != nil) == requestHasSourceProvenance
-		}) {
-			resumeDownload(existingDownload)
-			return existingDownload
-		}
-		
-		let download = Download(id: id, url: url, sourceProvenance: sourceProvenance)
-		
-		let task = _session.downloadTask(with: url)
+		sourceProvenance: SourceAppProvenance? = nil,
+        signingCertificate: CertificatePair? = nil
+    ) -> Download? {
+        guard outcomes[id] != .signing, !localSessionIDs.contains(id) else { return nil }
+        let sourceOperation = id.hasPrefix("source:")
+        if let existing = downloads.first(where: { download in
+            if sourceOperation || download.id.hasPrefix("source:") { return download.id == id }
+            return download.url == url && download.sourceProvenance == sourceProvenance
+        }) {
+            return existing
+        }
+        let download = Download(id: id, url: url, sourceProvenance: sourceProvenance)
+        download.signingCertificate = signingCertificate
+        if sourceOperation { outcomes[id] = nil }
+        let task = _session.downloadTask(with: url)
 		download.task = task
         download.isPaused = false
 		task.resume()
@@ -125,9 +134,11 @@ class DownloadManager: NSObject, ObservableObject {
 	}
 	
 	func pauseDownload(_ download: Download) {
-        guard let task = download.task, !download.isPaused else { return }
+        guard let task = download.task, !download.isPaused, !download.packaging else { return }
+        download.isPaused = true
         task.cancel(byProducingResumeData: { resumeData in
             DispatchQueue.main.async {
+                guard download.task === task else { return }
                 download.resumeData = resumeData
                 download.task = nil
                 download.isPaused = true
@@ -136,6 +147,10 @@ class DownloadManager: NSObject, ObservableObject {
     }
 
 	func resumeDownload(_ download: Download) {
+		guard download.isPaused, download.task == nil else { return }
+        download.sampleTime = ProcessInfo.processInfo.systemUptime
+        download.sampleBytes = download.bytesDownloaded
+        download.bytesPerSecond = 0
 		if let resumeData = download.resumeData {
 			let task = _session.downloadTask(withResumeData: resumeData)
 			download.task = task
@@ -159,6 +174,8 @@ class DownloadManager: NSObject, ObservableObject {
 	}
 	
 	func cancelDownload(_ download: Download) {
+		guard !download.packaging, downloads.contains(where: { $0 === download }) else { return }
+        if download.id.hasPrefix("source:") { outcomes[download.id] = .cancelled }
 		download.task?.cancel()
 		
 		if let index = downloads.firstIndex(where: { $0.id == download.id }) {
@@ -193,26 +210,42 @@ class DownloadManager: NSObject, ObservableObject {
 
 extension DownloadManager: URLSessionDownloadDelegate {
 	
-	func handlePachageFile(url: URL, dl: Download) throws {
+	private func signImported(_ download: Download, certificate: CertificatePair) {
+        let request = NSFetchRequest<Imported>(entityName: "Imported")
+        request.fetchLimit = 1
+        guard let uuid = download.importedUUID else {
+            outcomes[download.id] = .failed("تعذر تحديد التطبيق المستورد.")
+            return
+        }
+        request.predicate = NSPredicate(format: "uuid == %@", uuid)
+        guard let imported = try? Storage.shared.context.fetch(request).first else {
+            outcomes[download.id] = .failed("تعذر العثور على التطبيق المستورد.")
+            return
+        }
+        let id = download.id
+        outcomes[id] = .signing
+        FR.signPackageFile(imported, using: OptionsManager.shared.options, icon: nil,
+                           certificate: certificate, onSigned: { self.outcomes[id] = .ready($0) }) { error in
+            if let error { self.outcomes[id] = .failed(error.localizedDescription) }
+        }
+    }
+
+    func handlePachageFile(url: URL, dl: Download) throws {
 		FR.handlePackageFile(url, download: dl) { err in
-            if !dl.directInstall {
-                NotificationCenter.default.post(
-                    name: Notification.Name("Feather.libraryImportFinished"),
-                    object: dl.id,
-                    userInfo: err.map { ["error": $0.localizedDescription] }
-                )
+            if dl.id.hasPrefix("source:") {
+                if let err { self.outcomes[dl.id] = .failed(err.localizedDescription) }
+                else if let certificate = dl.signingCertificate {
+                    self.signImported(dl, certificate: certificate)
+                } else { self.outcomes[dl.id] = .imported }
             }
-            if err == nil, dl.directInstall, let uuid = dl.importedUUID {
-                NotificationCenter.default.post(name: Notification.Name("Feather.directInstallImported"), object: dl.id, userInfo: ["importedUUID": uuid])
-            }
-			if err != nil {
+            if err != nil {
 				let generator = UINotificationFeedbackGenerator()
 				generator.notificationOccurred(.error)
 			}
 			
 			DispatchQueue.main.async {
-				if let index = DownloadManager.shared.getDownloadIndex(by: dl.id) {
-					DownloadManager.shared.downloads.remove(at: index)
+				if let index = self.downloads.firstIndex(where: { $0 === dl }) {
+					self.downloads.remove(at: index)
 					
 					#if !targetEnvironment(macCatalyst)
 					if #available(iOS 26.0, *) {
@@ -233,11 +266,15 @@ extension DownloadManager: URLSessionDownloadDelegate {
 		let customTempDir = tempDirectory.appendingPathComponent("FeatherDownloads", isDirectory: true)
 		
 		do {
-			try FileManager.default.createDirectoryIfNeeded(at: customTempDir)
+			if let response = downloadTask.response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
+                throw NSError(domain: "Feather.Download.HTTP", code: response.statusCode,
+                              userInfo: [NSLocalizedDescriptionKey: "فشل التنزيل (HTTP \(response.statusCode))."])
+            }
+            try FileManager.default.createDirectoryIfNeeded(at: customTempDir)
 			
 			// Use the server-suggested filename if available, otherwise fallback
-			let suggestedFileName = downloadTask.response?.suggestedFilename ?? download.fileName
-			let destinationURL = customTempDir.appendingPathComponent(suggestedFileName)
+			let suggestedFileName = URL(fileURLWithPath: downloadTask.response?.suggestedFilename ?? download.fileName).lastPathComponent
+			let destinationURL = customTempDir.appendingPathComponent(UUID().uuidString + "-" + suggestedFileName)
 			
 			try FileManager.default.removeFileIfNeeded(at: destinationURL)
 			try FileManager.default.moveItem(at: location, to: destinationURL)
@@ -251,9 +288,10 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 )
             }
 
-			try handlePachageFile(url: destinationURL, dl: download)
+			download.packaging = true
+            try handlePachageFile(url: destinationURL, dl: download)
 		} catch {
-			print("Error handling downloaded file: \(error.localizedDescription)")
+			finishFailure(download, error: error)
 		}
 	}
 	
@@ -261,7 +299,14 @@ extension DownloadManager: URLSessionDownloadDelegate {
 		guard let download = getDownloadTask(by: downloadTask) else { return }
 		
 		DispatchQueue.main.async {
-			download.progress = totalBytesExpectedToWrite > 0
+			let now = ProcessInfo.processInfo.systemUptime
+            let elapsed = now - download.sampleTime
+            if elapsed >= 1 {
+                download.bytesPerSecond = max(0, Int64(Double(totalBytesWritten - download.sampleBytes) / elapsed))
+                download.sampleTime = now
+                download.sampleBytes = totalBytesWritten
+            }
+            download.progress = totalBytesExpectedToWrite > 0
 			? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
 			: 0
 			download.bytesDownloaded = totalBytesWritten
@@ -277,17 +322,23 @@ extension DownloadManager: URLSessionDownloadDelegate {
 	
 	func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
 		guard
-			let _ = error,
+			let error = error,
 			let downloadTask = task as? URLSessionDownloadTask,
 			let download = getDownloadTask(by: downloadTask)
 		else {
 			return
 		}
 		
-		DispatchQueue.main.async {
-			if let index = self.getDownloadIndex(by: download.id) {
-				self.downloads.remove(at: index)
-			}
-		}
-	}
+		if download.isPaused && (error as NSError).code == NSURLErrorCancelled { return }
+        finishFailure(download, error: error)
+    }
+
+    private func finishFailure(_ download: Download, error: Error) {
+        if download.id.hasPrefix("source:") { outcomes[download.id] = .failed(error.localizedDescription) }
+        downloads.removeAll { $0 === download }
+        #if !targetEnvironment(macCatalyst)
+        if #available(iOS 26.0, *) { BackgroundTaskManager.shared.stopTask(for: download.id, success: false) }
+        else { _updateBackgroundAudioState() }
+        #endif
+    }
 }

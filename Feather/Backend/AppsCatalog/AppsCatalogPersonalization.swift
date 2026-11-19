@@ -140,10 +140,13 @@ struct AppsCatalogHistoryView: View {
 struct AppsCatalogDownloadsView: View {
     @ObservedObject private var manager = DownloadManager.shared
 
+    @ObservedObject private var local = SourceDirectSessions.shared
+    @State private var selectedID: String?
+
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
-                if manager.downloads.isEmpty {
+                if manager.downloads.isEmpty && local.sessions.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "arrow.down.circle")
                             .font(.system(size: 34))
@@ -156,6 +159,18 @@ struct AppsCatalogDownloadsView: View {
                     .padding()
                 } else {
                     List {
+                        ForEach(local.sessions.keys.sorted(), id: \.self) { id in
+                            if let session = local.sessions[id], case let .source(_, title, _, _) = session.input {
+                                Button {
+                                    selectedID = id
+                                } label: {
+                                    VStack(alignment: .leading) {
+                                        Text(title).font(.headline)
+                                        DirectSessionStatus(engine: session.engine)
+                                    }
+                                }
+                            }
+                        }
                         ForEach(manager.downloads) { download in
                             AppsCatalogDownloadRow(download: download)
                         }
@@ -164,6 +179,12 @@ struct AppsCatalogDownloadsView: View {
             }
             .storeScreen()
             .navigationTitle("مدير التحميلات")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: Binding(get: { selectedID != nil }, set: { if !$0 { selectedID = nil } })) {
+                if let id = selectedID, let session = local.sessions[id] {
+                    DirectInstallView(input: session.input, sharedEngine: session.engine) { local.close(id) }
+                }
+            }
         }
     }
 }
@@ -198,6 +219,7 @@ private struct AppsCatalogDownloadRow: View {
                 }
                 .buttonStyle(.bordered)
             }
+            .disabled(download.packaging || download.onlyArchiving)
         }
         .padding(.vertical, 5)
     }

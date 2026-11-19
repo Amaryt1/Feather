@@ -70,7 +70,7 @@ struct LibraryView: View {
 	
 	// MARK: Body
 	var body: some View {
-		NBNavigationView(.localized("Library")) {
+		NBNavigationView(.localized("Library"), displayMode: .inline) {
 			NBListAdaptable {
 				if
 					!_filteredSignedApps.isEmpty,
@@ -139,7 +139,13 @@ struct LibraryView: View {
 								NBButton(.localized("Import"), style: .text)
 							}
 						}
-					}
+                    } else {
+                        VStack(spacing: 12) {
+                            Label(.localized("No Apps"), systemImage: "square.stack.3d.up")
+                            Menu { _importActions() } label: { Text(.localized("Import")) }
+                        }
+                    }
+
 				}
 			}
 			.toolbar {

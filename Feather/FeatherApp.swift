@@ -26,9 +26,11 @@ struct FeatherApp: App {
                 AMARYTCatalogPreviewView()
             } else {
             ZStack {
-			VStack {
+			VStack(spacing: 0) {
+				if !downloadManager.manualDownloads.isEmpty {
 				DownloadHeaderView(downloadManager: downloadManager)
 					.transition(.move(edge: .top).combined(with: .opacity))
+				}
 				VariedTabbarView()
 					.environment(\.managedObjectContext, storage.context)
 					.onOpenURL(perform: _handleURL)

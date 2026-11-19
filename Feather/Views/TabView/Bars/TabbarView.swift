@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct TabbarView: View {
-	@Environment(\.scenePhase) private var scenePhase
 	@State private var selectedTab: TabEnum = .new
 
 	var body: some View {
@@ -19,11 +18,6 @@ struct TabbarView: View {
 						Label(tab.title, systemImage: tab.icon)
 					}
 					.tag(tab)
-			}
-		}
-		.onChange(of: scenePhase) { phase in
-			if phase == .active {
-				selectedTab = .new
 			}
 		}
 	}

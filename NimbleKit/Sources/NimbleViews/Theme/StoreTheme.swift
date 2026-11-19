@@ -56,13 +56,16 @@ private struct ParticleField: View {
             let glow = CGPoint(x: size.width * (0.72 + 0.08 * sin(time / 28)), y: size.height * 0.18)
             ctx.fill(Path(rect), with: .radialGradient(Gradient(colors: [StoreTheme.violet.opacity(0.13), .clear]),
                 center: glow, startRadius: 0, endRadius: max(1, size.width * 0.82)))
-            for index in 0..<36 {
+            let halo = CGPoint(x: size.width * (0.18 + 0.07 * cos(time / 37)), y: size.height * 0.12)
+            ctx.fill(Path(rect), with: .radialGradient(Gradient(colors: [StoreTheme.teal.opacity(0.14), .clear]),
+                center: halo, startRadius: 0, endRadius: max(1, size.width * 0.70)))
+            for index in 0..<48 {
                 let depth = Double(index % 3 + 1)
                 let x = Double((index * 163 + 41) % 997) / 997
                 let y = (Double((index * 271 + 37) % 991) / 991 + time * depth / 900).truncatingRemainder(dividingBy: 1)
                 let diameter = 0.75 + depth * 0.40
                 let dot = CGRect(x: x * size.width, y: y * size.height, width: diameter, height: diameter)
-                ctx.fill(Path(ellipseIn: dot), with: .color((index.isMultiple(of: 4) ? StoreTheme.violet : StoreTheme.cyan).opacity(0.23 + depth * 0.09)))
+                ctx.fill(Path(ellipseIn: dot), with: .color((index.isMultiple(of: 4) ? StoreTheme.violet : StoreTheme.cyan).opacity(0.25 + depth * 0.09 + 0.06 * sin(time / 5 + Double(index)))))
             }
         }
     }
@@ -78,8 +81,7 @@ private struct StoreScreen: ViewModifier {
                 if appearance == .professional { ParticleField().ignoresSafeArea() }
                 else if let fallback { fallback.ignoresSafeArea() }
             }
-            .toolbarBackground(appearance == .professional ? AnyShapeStyle(StoreTheme.midnight) : AnyShapeStyle(.bar), for: .navigationBar)
-            .toolbarBackground(appearance == .professional ? .visible : .automatic, for: .navigationBar)
+            .toolbarBackground(appearance == .professional ? .hidden : .automatic, for: .navigationBar, .tabBar)
     }
 }
 

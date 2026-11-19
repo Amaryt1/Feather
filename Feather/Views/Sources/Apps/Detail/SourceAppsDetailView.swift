@@ -19,28 +19,30 @@ struct SourceAppsDetailView: View {
     @State private var showAMARYTInstall = false
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
-    @State private var libraryImportDownloadID: String?
-    @State private var libraryImportComplete = false
-    @State private var directInstallDownloadID: String?
-    @State private var isDirectInstallSigning = false
     @State private var directInstallError: String?
     @State private var directInstallPreview: AnyApp?
-	@ObservedObject var downloadManager = DownloadManager.shared
-	@State private var _downloadProgress: Double = 0
-	@State var cancellable: AnyCancellable? // Combine
+    @ObservedObject private var downloadManager = DownloadManager.shared
+    @ObservedObject private var localInstalls = SourceDirectSessions.shared
+    @Environment(\.storeMotion) private var motion
 	@State private var _isScreenshotPreviewPresented: Bool = false
 	@State private var _selectedScreenshotIndex: Int = 0
 	@State private var relatedApps: [AppsCatalogEntry] = []
 	@State private var isLoadingRelatedApps = true
 	
-	var currentDownload: Download? {
-		downloadManager.getDownload(by: app.currentUniqueId)
-	}
-	
+    private var operationID: String {
+        SourceOperationKey.make(sourceURL: sourceURL, repository: source, app: app).id
+    }
+
 	let sourceURL: URL?
 	let source: ASRepository
 	let app: ASRepository.App
 	
+    init(sourceURL: URL?, source: ASRepository, app: ASRepository.App) {
+        self.sourceURL = sourceURL
+        self.source = source
+        self.app = app
+    }
+
 	var body: some View {
 		ScrollView {
 			if #available(iOS 18, *) {
@@ -307,111 +309,73 @@ struct SourceAppsDetailView: View {
         }
     }
 
-    private func startDirectInstall() {
+    private func start(certificate: CertificatePair? = nil) {
         guard let url = app.currentDownloadUrl else {
             directInstallError = "رابط تحميل التطبيق غير متوفر."
             return
         }
-        let id = "FeatherDirectInstall_\(UUID().uuidString)"
-        let download = downloadManager.startDownload(
-            from: url,
-            id: id,
-            sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
-        )
-        download.directInstall = true
-        directInstallDownloadID = download.id
+        _ = downloadManager.startDownload(from: url, id: operationID,
+            sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app),
+            signingCertificate: certificate)
     }
 
-    private func signDirectInstall(importedUUID: String) {
-        let request = NSFetchRequest<Imported>(entityName: "Imported")
+    private func presentSigned(_ uuid: String) {
+        let request = NSFetchRequest<Signed>(entityName: "Signed")
         request.fetchLimit = 1
-        request.predicate = NSPredicate(format: "uuid == %@", importedUUID)
-        guard let imported = try? Storage.shared.context.fetch(request).first else {
-            directInstallError = "تعذر العثور على التطبيق بعد اكتمال التنزيل."
-            return
+        request.predicate = NSPredicate(format: "uuid == %@", uuid)
+        if let signed = try? Storage.shared.context.fetch(request).first {
+            directInstallPreview = AnyApp(base: signed)
+        } else {
+            downloadManager.outcomes[operationID] = .failed("تعذر العثور على الحزمة الموقعة.")
         }
-        let selectedIndex = UserDefaults.standard.integer(forKey: "feather.selectedCert")
-        guard availableCertificates.indices.contains(selectedIndex) else {
-            showCertificateAlert = true
-            return
-        }
-        isDirectInstallSigning = true
-        FR.signPackageFile(
-            imported,
-            using: OptionsManager.shared.options,
-            icon: nil,
-            certificate: availableCertificates[selectedIndex],
-            onSigned: { signedUUID in
-                let signedRequest = NSFetchRequest<Signed>(entityName: "Signed")
-                signedRequest.fetchLimit = 1
-                signedRequest.predicate = NSPredicate(format: "uuid == %@", signedUUID)
-                if let signed = try? Storage.shared.context.fetch(signedRequest).first {
-                    directInstallPreview = AnyApp(base: signed)
-                } else {
-                    directInstallError = "تم التوقيع لكن تعذر فتح واجهة التثبيت."
-                }
-            }
-        ) { error in
-            isDirectInstallSigning = false
-            if let error { directInstallError = error.localizedDescription }
-        }
-    }
-
-    private func importToLibrary() {
-        guard let url = app.currentDownloadUrl else {
-            directInstallError = "رابط تحميل التطبيق غير متوفر."
-            return
-        }
-        libraryImportComplete = false
-        let download = downloadManager.startDownload(
-            from: url,
-            id: app.currentUniqueId,
-            sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
-        )
-        libraryImportDownloadID = download.id
-    }
-
-    // Derive the busy state from live downloads, not a stale view-local ID.
-    // This also survives leaving the details screen and opening it again.
-    private var isDirectInstallDownloading: Bool {
-        guard let url = app.currentDownloadUrl else { return false }
-        return downloadManager.downloads.contains { $0.directInstall && $0.url == url }
     }
 
     private var storeActions: some View {
-        HStack(spacing: 10) {
-            Button {
-                if installationMethod == DirectPolicy.method {
-                    showAMARYTInstall = true
-                } else if availableCertificates.isEmpty {
-                    showCertificateAlert = true
-                } else {
-                    startDirectInstall()
-                }
-            } label: {
-                Text("تثبيت")
-            }
-            .disabled(isDirectInstallSigning || isDirectInstallDownloading)
-            .buttonStyle(StoreActionStyle())
-            Button {
-                importToLibrary()
-            } label: {
-                if let id = libraryImportDownloadID,
-                   let download = downloadManager.getDownload(by: id) {
-                    VStack(spacing: 3) {
-                        Text("جارٍ الاستيراد")
-                        ProgressView(value: download.overallProgress)
+        let download = downloadManager.getDownload(by: operationID)
+        let outcome = downloadManager.outcomes[operationID]
+        let session = localInstalls.sessions[operationID]
+        let busy = download != nil || outcome == .signing
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Button {
+                    if session != nil || installationMethod == DirectPolicy.method {
+                        localInstalls.open(operationID, input: .source(app.currentDownloadUrl, app.currentName,
+                                                                      app.currentVersion, app.iconURL))
+                        showAMARYTInstall = true
+                    } else if case let .ready(uuid) = outcome { presentSigned(uuid) }
+                    else {
+                        let index = UserDefaults.standard.integer(forKey: "feather.selectedCert")
+                        if availableCertificates.indices.contains(index) { start(certificate: availableCertificates[index]) }
+                        else { showCertificateAlert = true }
                     }
-                } else if libraryImportComplete {
-                    Label("تمت الإضافة", systemImage: "checkmark")
-                } else {
-                    Text("استيراد إلى المكتبة")
+                } label: {
+                    Text(session != nil ? "متابعة التثبيت" : "تثبيت")
+                }.disabled(busy).buttonStyle(StoreActionStyle())
+                Button("استيراد إلى المكتبة") { start() }
+                    .disabled(busy || session != nil).buttonStyle(.bordered)
+            }
+            if let download {
+                Text(download.signingCertificate == nil ? "جارٍ الاستيراد إلى المكتبة" : "جارٍ تجهيز التثبيت")
+                DownloadMetricsView(download: download)
+            } else if let session {
+                DirectSessionStatus(engine: session.engine)
+            } else {
+                switch outcome {
+                case .imported: Label("تمت الإضافة إلى المكتبة", systemImage: "checkmark")
+                case .signing: ProgressView("جارٍ التوقيع")
+                case .ready: Label("جاهز للتثبيت", systemImage: "checkmark.seal")
+                case let .failed(message): Text(message).foregroundStyle(.red)
+                case .submitted: Text("تم إرسال طلب التثبيت إلى iOS")
+                case .cancelled: Text("أُلغيت العملية")
+                case nil: EmptyView()
                 }
             }
-            .disabled(libraryImportDownloadID != nil || libraryImportComplete)
-            .buttonStyle(.bordered)
         }
         .font(.subheadline)
+        .animation(motion ? StoreTheme.feedback : nil, value: busy)
+        .onChange(of: outcome) { updated in
+            if case let .ready(uuid) = updated { presentSigned(uuid) }
+        }
         .alert("الشهادة مطلوبة", isPresented: $showCertificateAlert) {
             Button("إضافة شهادة") { showCertificates = true }
             Button("إلغاء", role: .cancel) {}
@@ -426,25 +390,12 @@ struct SourceAppsDetailView: View {
         } message: {
             Text(directInstallError ?? "")
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Feather.libraryImportFinished"))) { notification in
-            guard let downloadID = notification.object as? String,
-                  downloadID == libraryImportDownloadID else { return }
-            libraryImportDownloadID = nil
-            if let error = notification.userInfo?["error"] as? String {
-                directInstallError = error
-            } else {
-                libraryImportComplete = true
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("Feather.directInstallImported"))) { notification in
-            guard let downloadID = notification.object as? String,
-                  downloadID == directInstallDownloadID,
-                  let uuid = notification.userInfo?["importedUUID"] as? String else { return }
-            directInstallDownloadID = nil
-            signDirectInstall(importedUUID: uuid)
-        }
         .sheet(isPresented: $showAMARYTInstall) {
-            DirectInstallView(input: .source(app.currentDownloadUrl, app.currentName, app.currentVersion, app.iconURL))
+            if let session = localInstalls.sessions[operationID] {
+                DirectInstallView(input: session.input, sharedEngine: session.engine) {
+                    localInstalls.close(operationID)
+                }
+            }
         }
         .sheet(item: $directInstallPreview) { app in
             InstallPreviewView(app: app.base, isSharing: app.archive)

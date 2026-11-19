@@ -42,9 +42,11 @@ struct SourceAppsCellView: View {
 					}
 				}
 				if method == DirectPolicy.method {
-                    Button(.localized("Get")) {
+                    Button {
                         if #available(iOS 17, *), let openLocalDetails { openLocalDetails() }
                         else { details = true }
+                    } label: {
+                        SourceActivityLabel(id: SourceOperationKey.make(sourceURL: sourceURL, repository: source, app: app).id, idle: .localized("Get"))
                     }
                     .buttonStyle(.bordered)
                     .sheet(isPresented: $details) {

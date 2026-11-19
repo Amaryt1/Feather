@@ -17,31 +17,22 @@ struct DownloadButtonView: View {
     var opensDetails = false
 	@ObservedObject private var downloadManager = DownloadManager.shared
 
-	@State private var downloadProgress: Double = 0
-	@State private var cancellable: AnyCancellable?
+    private var operationID: String {
+        SourceOperationKey.make(sourceURL: sourceURL, repository: source, app: app).id
+    }
 
-	var body: some View {
-		ZStack {
-			if let currentDownload = downloadManager.getDownload(by: app.currentUniqueId) {
-				ZStack {
-					Circle()
-						.trim(from: 0, to: downloadProgress)
-						.stroke(AngularGradient(colors: [.cyan, Color.accentColor, .purple, .cyan], center: .center), style: StrokeStyle(lineWidth: 2.8, lineCap: .round))
-						.rotationEffect(.degrees(-90))
-						.frame(width: 31, height: 31)
-						.animation(.smooth, value: downloadProgress)
-
-					Image(systemName: downloadProgress >= 0.75 ? "archivebox" : "square.fill")
-						.foregroundStyle(.tint)
-						.font(.footnote).bold()
-				}
-				.onTapGesture {
-					if downloadProgress <= 0.75 {
-						downloadManager.cancelDownload(currentDownload)
-					}
-				}
-				.compatTransition()
-			} else if opensDetails, let source {
+    var body: some View {
+        ZStack {
+            if let download = downloadManager.getDownload(by: operationID) {
+                if opensDetails, let source {
+                    NavigationLink {
+                        SourceAppsDetailView(sourceURL: sourceURL, source: source, app: app)
+                    } label: { SourceDownloadRing(download: download) }
+                } else {
+                    Button { downloadManager.cancelDownload(download) } label: { SourceDownloadRing(download: download) }
+                        .disabled(download.packaging)
+                }
+            } else if opensDetails, let source {
                 NavigationLink {
                     SourceAppsDetailView(sourceURL: sourceURL, source: source, app: app)
                 } label: {
@@ -53,7 +44,7 @@ struct DownloadButtonView: View {
 					if let url = app.currentDownloadUrl {
 						_ = downloadManager.startDownload(
 							from: url,
-							id: app.currentUniqueId,
+							id: operationID,
 							sourceProvenance: _sourceProvenance()
 						)
 					}
@@ -64,16 +55,11 @@ struct DownloadButtonView: View {
 				.compatTransition()
 			}
 		}
-		.onAppear(perform: setupObserver)
-		.onDisappear { cancellable?.cancel() }
-		.onChange(of: downloadManager.downloads.description) { _ in
-			setupObserver()
-		}
-		.animation(.easeInOut(duration: 0.3), value: downloadManager.getDownload(by: app.currentUniqueId) != nil)
+
 	}
 
     private var getLabel: some View {
-        Text(.localized("Get"))
+        SourceActivityLabel(id: operationID, idle: .localized("Get"))
             .lineLimit(0)
             .font(.headline.bold())
             .foregroundStyle(Color.accentColor)
@@ -82,24 +68,6 @@ struct DownloadButtonView: View {
             .modifier(DownloadActionSurface())
     }
 
-	private func setupObserver() {
-		cancellable?.cancel()
-		guard let download = downloadManager.getDownload(by: app.currentUniqueId) else {
-			downloadProgress = 0
-			return
-		}
-		downloadProgress = download.overallProgress
-
-		let publisher = Publishers.CombineLatest(
-			download.$progress,
-			download.$unpackageProgress
-		)
-
-		cancellable = publisher.sink { _, _ in
-			downloadProgress = download.overallProgress
-		}
-	}
-	
 	private func _sourceProvenance() -> SourceAppProvenance? {
 		guard let source else { return nil }
 		return SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app)
@@ -117,4 +85,43 @@ private struct DownloadActionSurface: ViewModifier {
 				.overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
 		}
 	}
+}
+
+
+struct SourceDownloadRing: View {
+    @ObservedObject var download: Download
+    var body: some View {
+        ZStack {
+            StoreProgressRing(download.packaging ? download.unpackageProgress : download.progress)
+            Image(systemName: download.packaging ? "archivebox" : "arrow.down").font(.caption)
+        }.frame(width: 32, height: 32)
+        .accessibilityLabel(download.packaging ? "تجهيز الحزمة" : "جارٍ التنزيل")
+    }
+}
+
+struct SourceActivityLabel: View {
+    let id: String
+    let idle: String
+    @ObservedObject private var manager = DownloadManager.shared
+    @ObservedObject private var local = SourceDirectSessions.shared
+
+    init(id: String, idle: String) {
+        self.id = id
+        self.idle = idle
+    }
+
+    var body: some View {
+        if let download = manager.getDownload(by: id) {
+            SourceDownloadRing(download: download)
+        } else if let session = local.sessions[id] {
+            DirectSessionStatus(engine: session.engine)
+        } else {
+            switch manager.outcomes[id] {
+            case .signing: Text("جارٍ التوقيع")
+            case .ready: Text("جاهز للتثبيت")
+            case .imported: Text("تمت الإضافة")
+            default: Text(idle)
+            }
+        }
+    }
 }

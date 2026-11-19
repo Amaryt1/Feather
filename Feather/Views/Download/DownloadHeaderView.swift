@@ -57,11 +57,7 @@ struct DownloadItemView: View {
 struct DownloadMetricsView: View {
     @ObservedObject var download: Download
     @Environment(\.storeAppearance) private var appearance
-    @State private var sampleTime = Date()
-    @State private var sampleBytes: Int64?
-    @State private var rate: Int64?
-
-    private var packaging: Bool { download.onlyArchiving || download.progress >= 1 }
+    private var packaging: Bool { download.onlyArchiving || download.packaging }
     private var fraction: Double? {
         if packaging { return min(1, max(0, download.unpackageProgress)) }
         guard download.totalBytes > 0 else { return nil }
@@ -86,24 +82,12 @@ struct DownloadMetricsView: View {
         }
         .font(.caption)
         .accessibilityElement(children: .combine)
-        .onAppear { resetSample() }
-        .onChange(of: download.isPaused) { _ in resetSample() }
-        .onChange(of: download.bytesDownloaded) { bytes in
-            let now = Date()
-            let seconds = now.timeIntervalSince(sampleTime)
-            guard !download.isPaused, let previous = sampleBytes, bytes >= previous else { resetSample(); return }
-            guard seconds >= 1 else { return }
-            rate = Int64(Double(bytes - previous) / seconds)
-            sampleBytes = bytes
-            sampleTime = now
-        }
     }
     private var byteCount: Text {
         let received = download.bytesDownloaded.formattedByteCount
         return Text(verbatim: download.totalBytes > 0 ? "\(received) / \(download.totalBytes.formattedByteCount)" : received)
     }
     @ViewBuilder private var transferRate: some View {
-        if !download.isPaused, let rate, rate > 0 { Text(verbatim: "\(rate.formattedByteCount) / ث") }
+        if !download.isPaused, download.bytesPerSecond > 0 { Text(verbatim: "\(download.bytesPerSecond.formattedByteCount) / ث") }
     }
-    private func resetSample() { sampleBytes = download.bytesDownloaded; sampleTime = Date(); rate = nil }
 }

@@ -190,3 +190,12 @@ extension Storage {
 		}
 	}
 }
+
+extension SourceOperationKey {
+    static func make(sourceURL: URL?, repository: ASRepository?, app: ASRepository.App,
+                     version: ASRepository.App.Version? = nil) -> Self {
+        Self(source: Self.repository(sourceURL) ?? repository?.id ?? repository?.name ?? "",
+             app: app.id ?? app.currentName, version: version?.version ?? app.currentVersion ?? "",
+             url: (version?.downloadURL ?? app.currentDownloadUrl)?.absoluteString ?? "")
+    }
+}

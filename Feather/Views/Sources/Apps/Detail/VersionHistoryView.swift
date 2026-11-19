@@ -33,7 +33,7 @@ struct VersionHistoryView: View {
 							Button {
 								_ = DownloadManager.shared.startDownload(
 									from: downloadURL,
-									id: app.currentUniqueId,
+									id: SourceOperationKey.make(sourceURL: sourceURL, repository: source, app: app, version: version).id,
 									sourceProvenance: SourceAppProvenance(
 										sourceURL: sourceURL,
 										repository: source,

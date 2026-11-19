@@ -37,7 +37,7 @@ struct SettingsView: View {
     
 	// MARK: Body
 	var body: some View {
-		NBNavigationView(.localized("Settings")) {
+		NBNavigationView(.localized("Settings"), displayMode: .inline) {
 			Form {
                 
 				_feedback()
