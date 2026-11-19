@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 private struct StagedApp: AppInfoPresentable {
     let identifier: String?
     var name: String? { nil }
