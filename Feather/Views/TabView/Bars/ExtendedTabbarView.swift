@@ -27,7 +27,7 @@ struct ExtendedTabbarView: View {
 
 	var body: some View {
 		TabView {
-			ForEach(TabEnum.defaultTabs, id: \.hashValue) { tab in
+			ForEach(TabEnum.defaultTabs, id: \.self) { tab in
 				Tab(tab.title, systemImage: tab.icon) {
 					TabEnum.view(for: tab)
 				}
@@ -43,7 +43,7 @@ struct ExtendedTabbarView: View {
 					}
 				}
 				
-				ForEach(_sources, id: \.identifier) { source in
+				ForEach(_sources, id: \.objectID) { source in
 					Tab {
 						NavigationStack {
 							SourceAppsView(object: [source], viewModel: viewModel)

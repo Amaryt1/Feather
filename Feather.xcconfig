@@ -11,5 +11,4 @@ FEATHER_DISAMBIGUATOR=${DEVELOPMENT_TEAM}
 
 AD_HOC_CODE_SIGNING_ALLOWED = YES
 
-DEPLOYMENT_LOCATION = YES
-DSTROOT = $(SRCROOT)/_build/
+// The legacy Makefile supplies its staging root; Xcode Archive uses its own installation root.

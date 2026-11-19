@@ -39,14 +39,16 @@ $(PLATFORMS): deps
 		-destination "$$DEST" \
 		-derivedDataPath $(TMP)/$@ \
 		-skipPackagePluginValidation \
+		DEPLOYMENT_LOCATION=YES DSTROOT="$(CURDIR)/_build" \
 		CODE_SIGNING_ALLOWED=NO \
 		ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=NO
 
 	mkdir -p _build/Payload
 	cp -R _build/Applications/*.app _build/Payload/Feather.app
 	chmod -R 0755 _build/Payload/Feather.app
+	cp deps/* _build/Payload/Feather.app/
 	codesign --force --sign - --timestamp=none _build/Payload/Feather.app
-	cp deps/* _build/Payload/Feather.app/ || true
+	codesign --verify --strict --deep _build/Payload/Feather.app
 
 	mkdir -p packages
 

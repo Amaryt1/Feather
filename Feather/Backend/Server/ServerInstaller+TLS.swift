@@ -16,22 +16,19 @@ import SystemConfiguration.CaptiveNetwork
 // MARK: - Class extension: TLS/Setup
 extension ServerInstaller {
 	// MARK: Setup
-	static let env: Environment = {
-		var env = try! Environment.detect()
-		try! LoggingSystem.bootstrap(from: &env)
+	static let environment = Result<Environment, Error> {
+		var env = try Environment.detect()
+		try LoggingSystem.bootstrap(from: &env)
 		return env
-	}()
+	}
 	
 	func setupApp(port: Int) throws -> Application {
-		let app = Application(Self.env)
+		let configuration = getServerMethod() == 1 ? nil : try tls()
+        let app = Application(try Self.environment.get())
 		app.threadPool = .init(numberOfThreads: 1)
 		
-		if getServerMethod() != 1 {
-			if let tls = try tls() {
-				app.http.server.configuration.tlsConfiguration = tls
-			}
-		}
-		
+        if let configuration { app.http.server.configuration.tlsConfiguration = configuration }
+
 		app.http.server.configuration.hostname = sni()
 		app.http.server.configuration.tcpNoDelay = true
 		app.http.server.configuration.address = .hostname("0.0.0.0", port: port)

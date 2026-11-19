@@ -44,3 +44,21 @@ jobs:
           "$RUNNER_TEMP/direct-tests"
       - name: Build unsigned for iOS
         run: xcodebuild -project Feather.xcodeproj -scheme Feather -configuration Debug -destination 'generic/platform=iOS' -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
+
+  startup:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check archive structure validation
+        run: python3 Tests/Startup/ArchiveTests.py
+      - name: Verify storage recovery using Core Data
+        run: |
+          xcrun momc Feather/Backend/Storage/Feather.xcdatamodeld "$RUNNER_TEMP/Feather.momd"
+          swiftc Feather/Backend/Storage/Storage.swift Tests/Startup/StorageTests.swift -o "$RUNNER_TEMP/startup-tests"
+          "$RUNNER_TEMP/startup-tests" "$RUNNER_TEMP/Feather.momd"
+      - name: Build Release for devices
+        run: xcodebuild -project Feather.xcodeproj -scheme Feather -configuration Release -destination 'generic/platform=iOS' -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
+      - name: Launch Debug on iPhone and iPad simulators
+        run: bash Tests/Startup/simulator-smoke.sh

@@ -12,6 +12,44 @@ import OSLog
 
 // MARK: - View
 struct InstallPreviewView: View {
+    let app: AppInfoPresentable
+    var isSharing = false
+    var sourceOperation: String? = nil
+    @State private var setup: Result<ServerInstaller, Error>?
+    @StateObject private var viewModel = InstallerStatusViewModel(isIdevice: UserDefaults.standard.integer(forKey: "Feather.installationMethod") == 1)
+
+    init(app: AppInfoPresentable, isSharing: Bool = false, sourceOperation: String? = nil) {
+        self.app = app
+        self.isSharing = isSharing
+        self.sourceOperation = sourceOperation
+    }
+
+    var body: some View {
+        Group {
+            switch setup {
+            case .success(let server):
+                RunningInstallPreview(app: app, viewModel: viewModel, installer: server,
+                                      isSharing: isSharing, sourceOperation: sourceOperation)
+            case .failure(let error):
+                VStack {
+                    Text(error.localizedDescription)
+                    Button("إعادة المحاولة") { startServer() }
+                }.padding()
+            case nil:
+                ProgressView().task { startServer() }
+            }
+        }
+    }
+
+    private func startServer() {
+        setup = Result { try ServerInstaller(app: app, viewModel: viewModel) }
+        if let id = sourceOperation, case .failure(let error) = setup {
+            DownloadManager.shared.outcomes[id] = .failed(error.localizedDescription)
+        }
+    }
+}
+
+private struct RunningInstallPreview: View {
 	@Environment(\.dismiss) var dismiss
 
 	@AppStorage("Feather.useShareSheetForArchiving") private var _useShareSheet: Bool = false
@@ -22,22 +60,22 @@ struct InstallPreviewView: View {
 	
 	@Environment(\.storeMotion) private var motion
 	var app: AppInfoPresentable
-	@StateObject var viewModel: InstallerStatusViewModel
-	@StateObject var installer: ServerInstaller
+	@ObservedObject var viewModel: InstallerStatusViewModel
+	@ObservedObject var installer: ServerInstaller
 	
-	@State var isSharing: Bool
+	let isSharing: Bool
 	
 	let sourceOperation: String?
-	init(app: AppInfoPresentable, isSharing: Bool = false, sourceOperation: String? = nil) {
+    init(app: AppInfoPresentable, viewModel: InstallerStatusViewModel, installer: ServerInstaller,
+         isSharing: Bool, sourceOperation: String?) {
+        self.app = app
+        self.viewModel = viewModel
+        self.installer = installer
+        self.isSharing = isSharing
         self.sourceOperation = sourceOperation
-		self.app = app
-		self.isSharing = isSharing
-		let viewModel = InstallerStatusViewModel(isIdevice: UserDefaults.standard.integer(forKey: "Feather.installationMethod") == 1)
-		self._viewModel = StateObject(wrappedValue: viewModel)
-		self._installer = StateObject(wrappedValue: try! ServerInstaller(app: app, viewModel: viewModel))
-	}
-	
-	// MARK: Body
+    }
+
+    // MARK: Body
 	var body: some View {
 		let cornerRadius = {
 			if #available(iOS 26.0, *) {

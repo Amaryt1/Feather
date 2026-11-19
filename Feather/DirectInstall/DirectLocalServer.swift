@@ -25,7 +25,7 @@ final class DirectLocalServer {
         let tls = try TLSConfiguration.makeServerConfiguration(
             certificateChain: [.certificate(try NIOSSLCertificate(bytes: Array(identity.certificate), format: .der))],
             privateKey: .privateKey(NIOSSLPrivateKey(bytes: Array(identity.serverKey), format: .pem)))
-        let app = Application(ServerInstaller.env)
+        let app = Application(try ServerInstaller.environment.get())
         server = app
         app.http.server.configuration.hostname = "127.0.0.1"
         app.http.server.configuration.port = port

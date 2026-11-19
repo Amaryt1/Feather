@@ -15,16 +15,37 @@ struct FeatherApp: App {
 	@UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showWelcome = true
 	
-	let heartbeat = HeartbeatManager.shared
+	@State private var pendingLinks: [URL] = []
 	
 	@StateObject var downloadManager = DownloadManager.shared
-	let storage = Storage.shared
+	@StateObject private var storage = Storage.shared
 	
 	var body: some Scene {
 		WindowGroup {
             if ProcessInfo.processInfo.arguments.contains("-AMARYTCatalogPreview") {
                 AMARYTCatalogPreviewView()
             } else {
+                Group {
+                    switch storage.state {
+                    case .waiting, .loading:
+                        ProgressView("جارٍ فتح المكتبة…").task { storage.load() }
+                    case .failed(let message):
+                        VStack(spacing: 16) {
+                            Text(message).multilineTextAlignment(.center)
+                            Button("إعادة المحاولة") { storage.load() }
+                        }.padding()
+                    case .ready:
+                        storeContent
+                    }
+                }
+                .onOpenURL { url in
+                    if storage.state == .ready { _handleURL(url) } else { pendingLinks.append(url) }
+                }
+            }
+        }
+    }
+
+    private var storeContent: some View {
             ZStack {
 			VStack(spacing: 0) {
 				if !downloadManager.manualDownloads.isEmpty {
@@ -33,7 +54,6 @@ struct FeatherApp: App {
 				}
 				VariedTabbarView()
 					.environment(\.managedObjectContext, storage.context)
-					.onOpenURL(perform: _handleURL)
 					.transition(.move(edge: .top).combined(with: .opacity))
 			}
 			.animation(.smooth, value: downloadManager.manualDownloads.description)
@@ -52,13 +72,17 @@ struct FeatherApp: App {
             .modifier(CardInstallHost())
             .modifier(StoreThemeHost())
             .task {
+                Logger(subsystem: "Feather", category: "Startup").notice("store.root.appeared")
+                appDelegate.startOptionalServices()
+                let links = pendingLinks
+                pendingLinks.removeAll()
+                links.forEach(_handleURL)
                 try? await Task.sleep(for: .seconds(2.5))
                 withAnimation(.easeOut(duration: 0.45)) { showWelcome = false }
             }
-            }
-		}
-	}
-	
+    }
+
+
 	private func _handleURL(_ url: URL) {
 		if url.scheme == "feather" {
 			/// feather://import-certificate?p12=<base64>&mobileprovision=<base64>&password=<base64>
@@ -324,11 +348,30 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 	) -> Bool {
 		_createPipeline()
 		_createDocumentsDirectories()
-		ResetView.clearWorkCache()
-		_addDefaultCertificates()
+
 		return true
 	}
 	
+    private var startedServices = false
+    func startOptionalServices() {
+        guard !startedServices else { return }
+        startedServices = true
+        _ = HeartbeatManager.shared
+        _addDefaultCertificates()
+        // Do not clear the whole process temp directory while URLSession or an importer is using it.
+        let cutoff = Date(timeIntervalSinceNow: -86400)
+        Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            let urls = (try? fm.contentsOfDirectory(at: fm.temporaryDirectory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            for url in urls {
+                guard ["FeatherSigning_", "FeatherImport_"].contains(where: { url.lastPathComponent.hasPrefix($0) }),
+                      let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                      date < cutoff else { continue }
+                try? fm.removeItem(at: url)
+            }
+        }
+    }
+
 	private func _createPipeline() {
 		DataLoader.sharedUrlCache.diskCapacity = 0
 		
