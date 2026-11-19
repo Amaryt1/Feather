@@ -132,40 +132,125 @@ struct StoreUpdateScreen: View {
         [.preparing, .downloading, .signing, .submitting].contains(engine.phase)
     }
 
+    private var status: String {
+        switch engine.phase {
+        case .idle: return ""
+        case .downloading: return "جارٍ تنزيل التحديث"
+        case .signing: return "جارٍ توقيع التطبيق"
+        case .preparing: return "جارٍ تجهيز التثبيت"
+        case .ready: return "التحديث جاهز للتثبيت"
+        case .submitting: return "جارٍ إرسال طلب التثبيت إلى iOS"
+        case .sent: return "تم إرسال طلب التثبيت. افتح الإصدار الجديد للتحقق من نجاحه."
+        case .failed: return "تعذّر تجهيز التحديث"
+        }
+    }
+
     private func checkCertificate() -> Bool {
         do { _ = try StoreUpdateSigning.certificate(); message = ""; return true }
         catch { message = error.localizedDescription; return false }
     }
 
+    private var storeIcon: UIImage? {
+        guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+              let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+              let names = primary["CFBundleIconFiles"] as? [String] else { return nil }
+        return names.reversed().compactMap { UIImage(named: $0) }.first
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    Image(systemName: "arrow.down.app.fill").font(.largeTitle).foregroundStyle(Color.accentColor)
-                    Text("تحديث AMARYT STORE مطلوب").font(.title2.bold())
-                    Text(release.version + (release.build.isEmpty ? "" : " (\(release.build))"))
-                    Text(release.notes).multilineTextAlignment(.center)
-                    if gate.offline { Text("الاتصال غير متاح. يُعرض آخر تحديث إجباري محفوظ.").font(.footnote) }
-                    if !message.isEmpty { Text(message).foregroundStyle(.secondary) }
-                    if engine.phase != .idle { Text(engine.statusText) }
-                    if working { ProgressView(value: engine.phase == .downloading ? engine.progress : nil) }
-                    if engine.phase == .sent {
-                        Text("بعد موافقة iOS، افتح المتجر مرة ثانية للتحقق من الإصدار. أبقِ المتجر مفتوحًا أثناء نقل الملف.")
+                VStack(spacing: 18) {
+                    Group {
+                        if let storeIcon {
+                            Image(uiImage: storeIcon).resizable().scaledToFit()
+                        } else {
+                            Image(systemName: "square.stack.3d.up.fill").resizable().scaledToFit()
+                                .foregroundStyle(Color.accentColor)
+                        }
                     }
+                    .frame(width: 112, height: 112)
+                    .clipShape(RoundedRectangle(cornerRadius: 25))
+                    .accessibilityLabel("شعار AMARYT STORE")
+
+                    Text("يتوفر تحديث جديد لمتجر AMARYT STORE")
+                        .font(.title2.bold()).multilineTextAlignment(.center)
+                    Text("الإصدار " + release.version + (release.build.isEmpty ? "" : " (\(release.build))"))
+                        .font(.headline).foregroundStyle(.secondary)
+                    Text(release.notes)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(14)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+
+                    if gate.offline {
+                        Label("الاتصال غير متاح؛ يتم عرض آخر تحديث إلزامي محفوظ.", systemImage: "wifi.slash")
+                            .font(.footnote)
+                    }
+                    if !message.isEmpty {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange).multilineTextAlignment(.center)
+                    }
+                    if !engine.message.isEmpty && engine.phase == .failed {
+                        Text(engine.message).foregroundStyle(.orange).multilineTextAlignment(.center)
+                    }
+                    if !status.isEmpty { Text(status).font(.subheadline).multilineTextAlignment(.center) }
+                    if working {
+                        if engine.phase == .downloading, let progress = engine.progress {
+                            ProgressView(value: progress)
+                            Text("\(Int(progress * 100))%").font(.caption.monospacedDigit())
+                        } else { ProgressView() }
+                    }
+
                     if engine.phase == .ready || engine.phase == .sent {
-                        Button("تثبيت التحديث") { engine.submit() }.buttonStyle(.borderedProminent)
+                        Button { engine.submit() } label: {
+                            Label("تثبيت التحديث", systemImage: "square.and.arrow.down")
+                                .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(working)
                     } else {
-                        Button(engine.phase == .failed ? "إعادة المحاولة" : "تحديث الآن") {
+                        Button {
                             if checkCertificate() { engine.prepareStoreUpdate(release) }
-                        }.buttonStyle(.borderedProminent).disabled(working)
+                        } label: {
+                            HStack(spacing: 10) {
+                                if working { ProgressView().tint(.white) }
+                                else { Image(systemName: engine.phase == .failed ? "arrow.clockwise" : "arrow.down.circle.fill") }
+                                Text(engine.phase == .failed ? "إعادة المحاولة" : "تحديث الآن")
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(working)
                     }
-                    if engine.phase == .idle || engine.phase == .failed {
-                        Button("إضافة شهادة") { adding = true }
-                        Button("اختيار أو تغيير الشهادة") { choosing = true }
-                        Button("إعدادات المحرك والثقة المحلية") { settings = true }
+
+                    if !working {
+                        Button { adding = true } label: {
+                            Label("إضافة شهادة", systemImage: "plus.rectangle.on.folder")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        Button { choosing = true } label: {
+                            Label("اختيار أو تغيير الشهادة", systemImage: "key.horizontal")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    Button("فحص التحديث مجددًا") { Task { await gate.refresh() } }
-                    Link("التواصل عبر Telegram", destination: URL(string: "https://t.me/llydl")!)
+                    Link(destination: URL(string: "https://t.me/llydl")!) {
+                        Label("التواصل عبر Telegram", systemImage: "paperplane.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    DisclosureGroup("خيارات متقدمة") {
+                        Button { settings = true } label: {
+                            Label("إعدادات المحرك والثقة المحلية", systemImage: "gearshape")
+                        }
+                        Button { Task { await gate.refresh() } } label: {
+                            Label("فحص التحديث مجددًا", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .font(.footnote)
                 }
                 .frame(maxWidth: 520).padding().frame(maxWidth: .infinity)
             }
