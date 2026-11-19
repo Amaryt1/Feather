@@ -2,8 +2,7 @@ import Foundation
 import CoreFoundation
 
 enum ClonePolicy {
-    // One original selection + up to 100 individually signed additional apps.
-    static let limit = 101
+    static let limit = 10
     static func identifiers(base: String, count: Int, occupied: Set<String>, profile: DirectProfile) throws -> [String] {
         let ids = try identifiers(base: base, count: count, occupied: occupied)
         try validate(ids, profile: profile)
