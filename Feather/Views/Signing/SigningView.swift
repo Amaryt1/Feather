@@ -21,11 +21,7 @@ struct SigningView: View {
 	@State private var _isImagePickerPresenting = false
 	@State private var _isSigning = false
 	@State private var _selectedPhoto: PhotosPickerItem? = nil
-	@StateObject private var batch = CloneBatch()
-    @State private var copies = 1
-    @State private var reviewedIDs: [String] = []
     @State private var initializedOptions = false
-    @State private var showBatch = false
 	@State var appIcon: UIImage?
 	
 	// MARK: Fetch
@@ -54,13 +50,6 @@ struct SigningView: View {
 			Form {
 				_customizationOptions(for: app)
                 _cert()
-                Section("تكرار التطبيق") {
-                    Stepper(copies == 1 ? "التطبيق الأصلي" : "النسخة الإضافية · الاختيار \(copies - 1)", value: $copies, in: 1...ClonePolicy.limit)
-                    if copies > 1 {
-                        ClonePlanView(base: _temporaryOptions.appIdentifier ?? app.identifier ?? "",
-                                      original: app.identifier, count: copies, certificate: _selectedCert(), approved: $reviewedIDs)
-                    }
-                }
 				_customizationProperties(for: app)
 				
 				// horrible
@@ -83,7 +72,6 @@ struct SigningView: View {
 									.padding()
 							}
 							.buttonStyle(.plain)
-                            .disabled(copies > 1 && reviewedIDs.count != 1)
 							.offset(y: UIDevice.current.userInterfaceIdiom == .pad ? -20 : -40)
 						}
 				}
@@ -99,7 +87,6 @@ struct SigningView: View {
 					placement: .topBarTrailing
 				) {
 					_temporaryOptions = OptionsManager.shared.options
-                    copies = 1
 					appIcon = nil
 				}
 			}
@@ -125,17 +112,7 @@ struct SigningView: View {
 					}
 				}
 			}
-			.disabled(_isSigning || batch.running)
-            .sheet(isPresented: $showBatch) {
-                NavigationStack {
-                    List {
-                        Text(batch.stage)
-                        ForEach(batch.results, id: \.self) { Text($0) }
-                        if batch.running { ProgressView(); Button("إلغاء التوقيع") { batch.cancel() } }
-                        else { Button("تم") { showBatch = false } }
-                    }.storeScreen().navigationTitle("توقيع النسخة")
-                }.interactiveDismissDisabled(batch.running)
-            }
+			.disabled(_isSigning)
 			.animation(.smooth, value: _isSigning)
 		}
 		.onAppear {
@@ -285,11 +262,6 @@ extension SigningView {
 // MARK: - Extension: View (import)
 extension SigningView {
 	private func _start() {
-        if copies > 1 {
-            showBatch = true
-            batch.start(app: app, options: _temporaryOptions, icon: appIcon, certificate: _selectedCert(), count: copies, expected: reviewedIDs)
-            return
-        }
 		guard
 			_selectedCert() != nil || _temporaryOptions.signingOption != .default
 		else {
