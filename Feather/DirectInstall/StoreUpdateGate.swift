@@ -133,6 +133,25 @@ struct StoreUpdateScreen: View {
     @State private var adding = false
     @State private var choosing = false
     @State private var showingServerHandoff = false
+    @State private var updateAudioActive = false
+
+    // Mirror the working Semi Local installer: keep the loopback HTTP
+    // transfer alive while iOS fetches the IPA outside the app.
+    private func startUpdateAudio() {
+        #if !targetEnvironment(macCatalyst)
+        guard !updateAudioActive else { return }
+        updateAudioActive = true
+        BackgroundAudioManager.shared.start()
+        #endif
+    }
+
+    private func stopUpdateAudio() {
+        #if !targetEnvironment(macCatalyst)
+        guard updateAudioActive else { return }
+        updateAudioActive = false
+        BackgroundAudioManager.shared.stop()
+        #endif
+    }
 
     private var working: Bool {
         [.preparing, .downloading, .signing, .submitting].contains(engine.phase)
@@ -216,6 +235,7 @@ struct StoreUpdateScreen: View {
                             }
                             message = ""
                             engine.beginStoreHandoff()
+                            startUpdateAudio()
                             showingServerHandoff = true
                         } label: {
                             Label("تثبيت التحديث", systemImage: "square.and.arrow.down")
@@ -283,15 +303,34 @@ struct StoreUpdateScreen: View {
                     message = "أُغلقت صفحة التثبيت قبل رصد طلب ملف IPA. تحقق من الاتصال بخدمة manifest وأعد فتح صفحة التثبيت."
                 }
                 engine.storePageDismissed()
+                // Closing the web page before the IPA request may be an
+                // intentional retry, so stop audio only if there is no
+                // background transfer pending.
+                if engine.phase == .ready || engine.phase == .failed {
+                    stopUpdateAudio()
+                }
             }) {
                 if let page = engine.storeUpdatePage {
                     SafariRepresentableView(url: page).ignoresSafeArea()
                 }
             }
         }
-        .onDisappear { if !showingServerHandoff { engine.cancel() } }
+        .onDisappear {
+            // The Safari sheet normally closes as soon as the IPA request
+            // starts. Do not destroy its local server or signed archive
+            // before the transfer has completed.
+            let transferring = (engine.phase == .submitting || engine.phase == .sent) && !engine.servedPackage
+            if !transferring && !showingServerHandoff {
+                stopUpdateAudio()
+                engine.cancel()
+            }
+        }
         .onChange(of: engine.phase) { phase in
             if phase == .sent || phase == .failed { showingServerHandoff = false }
+            if phase == .failed { stopUpdateAudio() }
+        }
+        .onChange(of: engine.servedPackage) { completed in
+            if completed { stopUpdateAudio() }
         }
     }
 }
