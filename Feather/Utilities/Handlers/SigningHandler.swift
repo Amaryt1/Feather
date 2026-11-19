@@ -62,6 +62,15 @@ final class SigningHandler: NSObject {
         try await _modify(publishToLibrary: false)
     }
 
+    func signStoreUpdate(at url: URL, expectedID: String) async throws {
+        try _fileManager.createDirectoryIfNeeded(at: _uniqueWorkDir)
+        try prepareCloneEntitlements(at: url, rootID: expectedID)
+        let signer = ZsignHandler(appUrl: url, options: _options, cert: appCertificate)
+        try await signer.sign(requireResult: true)
+        if let error = signer.hadError { throw error }
+        try validateClone(url, expectedID: expectedID)
+    }
+
     func signClone(expectedID: String) async throws {
         try await _modify(publishToLibrary: true, cloneID: expectedID)
     }

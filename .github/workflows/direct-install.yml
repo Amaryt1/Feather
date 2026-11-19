@@ -35,6 +35,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Check mandatory store update policy
+        run: |
+          swiftc Feather/DirectInstall/{StoreRelease,DirectPolicy}.swift Tests/StoreUpdate/PolicyTests.swift -o "$RUNNER_TEMP/store-update"
+          "$RUNNER_TEMP/store-update"
       - name: Check clone validation and catalog ordering
         run: |
           swiftc Feather/Utilities/FirstLaunchDefaults.swift Feather/Views/Signing/ClonePolicy.swift Feather/DirectInstall/Direct{Policy,Profile}.swift Feather/Views/Apps/CatalogRank.swift Feather/Backend/Observable/SourceOperation.swift Tests/StoreActions/PolicyTests.swift -o "$RUNNER_TEMP/store-actions"

@@ -75,7 +75,7 @@ final class CloneBatch: ObservableObject {
         return uuids
     }
 
-    private static func validateIdentity(_ p12: URL, password: String, profile: URL) throws {
+    nonisolated static func validateIdentity(_ p12: URL, password: String, profile: URL) throws {
         switch verifyCloneIdentity(p12.path, password, profile.path) {
         case CloneIdentityValid: return
         case CloneIdentityOutsideProfile:

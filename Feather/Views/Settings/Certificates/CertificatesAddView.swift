@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 
 // MARK: - View
 struct CertificatesAddView: View {
+    var onSaved: (() -> Void)? = nil
 	@Environment(\.dismiss) private var dismiss
 	
 	@State private var _p12URL: URL? = nil
@@ -121,7 +122,12 @@ extension CertificatesAddView {
 			provisionURL: provisionURL,
 			p12Password: _p12Password,
 			certificateName: _certificateName
-		) { _ in
+		) { error in
+            if let error {
+                UIAlertController.showAlertWithOk(title: .localized("Error"), message: error.localizedDescription)
+                return
+            }
+            onSaved?()
 			dismiss()
 		}
 	}

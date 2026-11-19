@@ -13,6 +13,8 @@ import OSLog
 @main
 struct FeatherApp: App {
 	@UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.scenePhase) private var phase
+    @StateObject private var updateGate = StoreUpdateGate()
     @State private var showWelcome = true
 	
 	@State private var pendingLinks: [URL] = []
@@ -22,26 +24,43 @@ struct FeatherApp: App {
 	
 	var body: some Scene {
 		WindowGroup {
+            #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-AMARYTCatalogPreview") {
                 AMARYTCatalogPreviewView()
-            } else {
-                Group {
-                    switch storage.state {
-                    case .waiting, .loading:
-                        ProgressView("جارٍ فتح المكتبة…").task { storage.load() }
-                    case .failed(let message):
-                        VStack(spacing: 16) {
-                            Text(message).multilineTextAlignment(.center)
-                            Button("إعادة المحاولة") { storage.load() }
-                        }.padding()
-                    case .ready:
-                        storeContent
-                    }
-                }
-                .onOpenURL { url in
-                    if storage.state == .ready { _handleURL(url) } else { pendingLinks.append(url) }
+            } else { gatedContent }
+            #else
+            gatedContent
+            #endif
+        }
+    }
+
+    private var gatedContent: some View {
+        Group {
+            switch storage.state {
+            case .waiting, .loading:
+                ProgressView("جارٍ فتح المكتبة…").task { storage.load() }
+            case .failed(let message):
+                VStack(spacing: 16) {
+                    Text(message).multilineTextAlignment(.center)
+                    Button("إعادة المحاولة") { storage.load() }
+                }.padding()
+            case .ready:
+                if let release = updateGate.required {
+                    StoreUpdateScreen(release: release, gate: updateGate)
+                        .id(release).environment(\.managedObjectContext, storage.context)
+                        .modifier(StoreThemeHost())
+                } else if updateGate.checked {
+                    storeContent
+                } else {
+                    ProgressView("جارٍ فحص تحديث المتجر…")
                 }
             }
+        }
+        .task(id: phase) { if phase == .active { await updateGate.refresh() } }
+        .onOpenURL { url in
+            guard updateGate.required == nil else { return }
+            guard updateGate.checked else { pendingLinks.append(url); return }
+            if storage.state == .ready { _handleURL(url) } else { pendingLinks.append(url) }
         }
     }
 

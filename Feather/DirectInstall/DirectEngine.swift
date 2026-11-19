@@ -57,9 +57,15 @@ final class DirectEngine: ObservableObject {
         prepare(input)
     }
 
-    func prepare(_ input: DirectInput) {
+    func prepare(_ input: DirectInput) { begin(input, update: nil) }
+
+    func prepareStoreUpdate(_ release: StoreRelease) {
+        begin(.source(release.url, "AMARYT STORE", release.version, nil), update: release)
+    }
+
+    private func begin(_ input: DirectInput, update: StoreRelease?) {
         guard work == nil else { return }
-        if needsTrust, archive != nil, metadata != nil {
+        if update == nil, needsTrust, archive != nil, metadata != nil {
             phase = .preparing
             work = Task {
                 defer { work = nil }
@@ -85,13 +91,18 @@ final class DirectEngine: ObservableObject {
                 folder = path
                 switch input {
                 case let .source(url, _, _, _):
-                    let cert = try certificate()
+                    let cert: CertificatePair
+                    if let update {
+                        try update.validate()
+                        cert = try StoreUpdateSigning.certificate()
+                    } else { cert = try certificate() }
                     let ipa = path.appendingPathComponent("source.ipa")
                     phase = .downloading
                     try await download(try DirectPolicy.https(url), to: ipa)
                     try Task.checkCancellation()
+                    if let update { try await StoreUpdateSigning.verifyFile(ipa, release: update) }
                     phase = .signing
-                    try await signAndPack(ipa, cert: cert, folder: path)
+                    try await signAndPack(ipa, cert: cert, folder: path, update: update)
                 case let .signed(app):
                     guard app.isSigned, let directory = Storage.shared.getAppDirectory(for: app) else { throw DirectError("اختر تطبيقًا موقّعًا من المكتبة.") }
                     try DirectDisk.require(try await DirectDisk.size(of: directory), at: path)
@@ -187,7 +198,7 @@ final class DirectEngine: ObservableObject {
         }
     }
 
-    private func signAndPack(_ ipa: URL, cert: CertificatePair, folder: URL) async throws {
+    private func signAndPack(_ ipa: URL, cert: CertificatePair, folder: URL, update: StoreRelease?) async throws {
         let directory = try await Self.unpack(ipa, folder: folder)
         try FileManager.default.removeItem(at: ipa)
         try Task.checkCancellation()
@@ -195,7 +206,11 @@ final class DirectEngine: ObservableObject {
               NSDictionary(contentsOf: directory.appendingPathComponent("Info.plist")) != nil else {
             throw DirectError("ملف معلومات التطبيق غير صالح.")
         }
-        var options = OptionsManager.shared.options
+        if let update {
+            let info = NSDictionary(contentsOf: directory.appendingPathComponent("Info.plist")) as? [String: Any] ?? [:]
+            try update.verifyPackage(info)
+        }
+        var options = update == nil ? OptionsManager.shared.options : Options.defaultOptions
         options.signingOption = .default
         options.appIdentifier = nil
         // ZsignHandler passes the inverse of this flag to Zsign.removeProvision.
@@ -204,7 +219,8 @@ final class DirectEngine: ObservableObject {
         let signer = SigningHandler(app: StagedApp(identifier: id), options: options)
         signer.appCertificate = cert
         do {
-            try await signer.signStagedBundle(at: directory)
+            if update != nil { try await signer.signStoreUpdate(at: directory, expectedID: id) }
+            else { try await signer.signStagedBundle(at: directory) }
             try await signer.clean()
         } catch {
             try? await signer.clean()
@@ -212,7 +228,7 @@ final class DirectEngine: ObservableObject {
             throw error
         }
         try Task.checkCancellation()
-        try await pack(directory, folder: folder)
+        try await pack(directory, folder: folder, update: update)
     }
 
     private nonisolated static func unpack(_ ipa: URL, folder: URL) async throws -> URL {
@@ -223,11 +239,15 @@ final class DirectEngine: ObservableObject {
         try FileManager.default.copyItem(at: source, to: destination)
     }
 
-    private func pack(_ dir: URL, folder: URL) async throws {
+    private func pack(_ dir: URL, folder: URL, update: StoreRelease? = nil) async throws {
         phase = .preparing
         guard let info = NSDictionary(contentsOf: dir.appendingPathComponent("Info.plist")) as? [String: Any],
-              let id = info["CFBundleIdentifier"] as? String, id != Bundle.main.bundleIdentifier,
+              let id = info["CFBundleIdentifier"] as? String, (update != nil || id != Bundle.main.bundleIdentifier),
               let version = info["CFBundleVersion"] as? String else { throw DirectError("تحقّق من توقيع الحزمة وملف التزويد. لا يمكن تحديث المتجر من نفسه.") }
+        if let update {
+            try update.verifyPackage(info)
+            try StoreUpdateSigning.verifyContinuity(of: dir)
+        }
         let profile = try DirectProfile.read(dir.appendingPathComponent("embedded.mobileprovision"))
         guard profile.permits(id) else {
             needsCertificate = true
