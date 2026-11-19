@@ -245,6 +245,9 @@ extension DownloadManager: URLSessionDownloadDelegate {
         // ZsignHandler passes the inverse flag; store installs require the embedded profile.
         options.removeProvisioning = true
         if download.copyCount > 1 {
+            // Clones use the user's manual signing preferences. Keep the
+            // existing embedded-profile override for ordinary store installs.
+            options.removeProvisioning = OptionsManager.shared.options.removeProvisioning
             options.appIdentifier = download.cloneBaseOverride ?? imported.identifier.flatMap { options.identifiers[$0] }
             signingTasks[id] = Task { @MainActor in
                 defer { self.signingTasks.removeValue(forKey: id) }
