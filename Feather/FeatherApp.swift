@@ -346,6 +346,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 		_ application: UIApplication,
 		didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
 	) -> Bool {
+        let files = FileManager.default
+        if let domain = Bundle.main.bundleIdentifier {
+            let existing = [files.archives, files.certificates, files.signed, files.unsigned]
+                .contains { files.fileExists(atPath: $0.path) }
+            FirstLaunchDefaults.apply(to: .standard, domain: domain, existingLibrary: existing)
+        }
 		_createPipeline()
 		_createDocumentsDirectories()
 

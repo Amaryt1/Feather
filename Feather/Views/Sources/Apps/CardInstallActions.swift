@@ -89,7 +89,8 @@ struct CardInstallActions: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Button("التفاصيل", action: details)
+            Button(action: details) { Text("التفاصيل").padding(.horizontal, 6).frame(minHeight: 44) }
+                .buttonStyle(.bordered)
             if let id, let session = local.sessions[id] {
                 LocalCardProgress(engine: session.engine, show: { inspect = true }, cancel: { local.close(id) })
             } else if let id, let download = manager.getDownload(by: id) {
@@ -101,8 +102,8 @@ struct CardInstallActions: View {
                 ProgressView().accessibilityLabel("جارٍ التجهيز")
             } else {
                 Button { Task { await start() } } label: {
-                    Image(systemName: "arrow.down.circle").frame(minWidth: 36, minHeight: 44)
-                }.disabled(resolving).accessibilityLabel("تنزيل وتثبيت")
+                    Image(systemName: "arrow.down.circle").frame(minWidth: 44, minHeight: 44)
+                }.buttonStyle(.borderedProminent).disabled(resolving).accessibilityLabel("تنزيل وتثبيت")
                 if let id {
                     switch manager.outcomes[id] {
                     case .failed(let error): Button { message = error } label: { Image(systemName: "exclamationmark.triangle") }

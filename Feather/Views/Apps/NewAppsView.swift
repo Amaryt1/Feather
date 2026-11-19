@@ -193,7 +193,8 @@ private struct NewAppFeatureCard: View {
 
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            bannerSection
+            Button(action: open) { bannerSection.contentShape(Rectangle()) }
+                .buttonStyle(.plain).accessibilityLabel("تفاصيل " + app.currentName)
             metadataRow
         }
         .padding(StoreTheme.inset)
@@ -331,20 +332,20 @@ private struct NewAppFeatureCard: View {
     }
 
     private var metadataRow: some View {
-        HStack(spacing: 8) {
-            Label(
-                app.currentVersion.map { "v\($0)" } ?? "الإصدار غير محدد",
-                systemImage: "tag"
-            )
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(
+                    app.currentVersion.map { "v\($0)" } ?? "الإصدار غير محدد",
+                    systemImage: "tag"
+                )
 
-            if let category = app.category {
-                Text("•")
-                Text(category)
+                if let category = app.category {
+                    Text("•")
+                    Text(category)
+                }
             }
-
-            Spacer()
-
             CardInstallActions(route: route, details: open)
+                .font(.subheadline.weight(.semibold))
         }
         .font(.caption)
         .foregroundStyle(accent)

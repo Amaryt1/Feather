@@ -16,6 +16,7 @@ import NukeUI
 struct SourceAppsDetailView: View {
     @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
     @AppStorage("Feather.installationMethod") private var installationMethod = 0
+    @State private var copies = 1
     @State private var showAMARYTInstall = false
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
@@ -316,7 +317,7 @@ struct SourceAppsDetailView: View {
         }
         _ = downloadManager.startDownload(from: url, id: operationID,
             sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app),
-            signingCertificate: certificate)
+            signingCertificate: certificate, copyCount: certificate == nil ? 1 : copies)
     }
 
     private func presentSigned(_ uuid: String) {
@@ -336,13 +337,15 @@ struct SourceAppsDetailView: View {
         let session = localInstalls.sessions[operationID]
         let busy = download != nil || outcome == .signing
         return VStack(alignment: .leading, spacing: 6) {
+            Stepper("تكرار التطبيق · عدد النسخ: \(copies)", value: $copies, in: 1...ClonePolicy.limit)
+                .disabled(busy || session != nil)
             HStack(spacing: 10) {
                 Button {
-                    if session != nil || installationMethod == DirectPolicy.method {
+                    if session != nil || (copies == 1 && installationMethod == DirectPolicy.method) {
                         localInstalls.open(operationID, input: .source(app.currentDownloadUrl, app.currentName,
                                                                       app.currentVersion, app.iconURL))
                         showAMARYTInstall = true
-                    } else if case let .ready(uuid) = outcome { presentSigned(uuid) }
+                    } else if copies == 1, case let .ready(uuid) = outcome { presentSigned(uuid) }
                     else {
                         let index = UserDefaults.standard.integer(forKey: "feather.selectedCert")
                         if availableCertificates.indices.contains(index) { start(certificate: availableCertificates[index]) }
@@ -361,8 +364,15 @@ struct SourceAppsDetailView: View {
                 DirectSessionStatus(engine: session.engine)
             } else {
                 switch outcome {
+                case .copiesReady(let uuids):
+                    ForEach(Array(uuids.enumerated()), id: \.element) { index, uuid in
+                        Button("تثبيت النسخة \(index + 1)") { presentSigned(uuid) }
+                            .buttonStyle(.bordered)
+                    }
                 case .imported: Label("تمت الإضافة إلى المكتبة", systemImage: "checkmark")
-                case .signing: ProgressView("جارٍ التوقيع")
+                case .signing:
+                    ProgressView("جارٍ التوقيع")
+                    Button("إلغاء التوقيع") { downloadManager.cancelSigning(operationID) }
                 case .ready: Label("جاهز للتثبيت", systemImage: "checkmark.seal")
                 case let .failed(message): Text(message).foregroundStyle(.red)
                 case .installed: Text("اكتمل التثبيت")
@@ -399,9 +409,13 @@ struct SourceAppsDetailView: View {
             }
         }
         .sheet(item: $directInstallPreview) { app in
-            InstallPreviewView(app: app.base, isSharing: app.archive)
-                .presentationDetents([.height(200)])
-                .presentationDragIndicator(.visible)
+            if installationMethod == DirectPolicy.method {
+                DirectInstallView(input: .signed(app.base))
+            } else {
+                InstallPreviewView(app: app.base, isSharing: app.archive)
+                    .presentationDetents([.height(200)])
+                    .presentationDragIndicator(.visible)
+            }
         }
         .sheet(isPresented: $showCertificates) {
             NavigationStack {

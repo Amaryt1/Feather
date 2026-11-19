@@ -196,6 +196,7 @@ final class DirectEngine: ObservableObject {
         }
         var options = OptionsManager.shared.options
         options.signingOption = .default
+        options.appIdentifier = nil
         // ZsignHandler passes the inverse of this flag to Zsign.removeProvision.
         // Keep the newly embedded provisioning profile in the signed IPA.
         options.removeProvisioning = true

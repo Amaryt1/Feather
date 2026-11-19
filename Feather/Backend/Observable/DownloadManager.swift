@@ -34,6 +34,7 @@ class Download: ObservableObject, Identifiable, @unchecked Sendable {
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
     var packageTask: Task<Void, Never>?
+    var copyCount = 1
     var signingCertificate: CertificatePair?
     @Published var packaging = false
     var sampleTime = ProcessInfo.processInfo.systemUptime
@@ -91,7 +92,8 @@ class DownloadManager: NSObject, ObservableObject {
 		from url: URL,
 		id: String = UUID().uuidString,
 		sourceProvenance: SourceAppProvenance? = nil,
-        signingCertificate: CertificatePair? = nil
+        signingCertificate: CertificatePair? = nil,
+        copyCount: Int = 1
     ) -> Download? {
         guard outcomes[id] != .signing, !localSessionIDs.contains(id) else { return nil }
         let sourceOperation = id.hasPrefix("source:")
@@ -102,6 +104,7 @@ class DownloadManager: NSObject, ObservableObject {
             return existing
         }
         let download = Download(id: id, url: url, sourceProvenance: sourceProvenance)
+        download.copyCount = copyCount
         download.signingCertificate = signingCertificate
         if sourceOperation { outcomes[id] = nil }
         let task = _session.downloadTask(with: url)
@@ -234,6 +237,19 @@ extension DownloadManager: URLSessionDownloadDelegate {
         outcomes[id] = .signing
         var options = OptionsManager.shared.options
         options.signingOption = .default
+        options.appIdentifier = nil
+        if download.copyCount > 1 {
+            signingTasks[id] = Task { @MainActor in
+                defer { self.signingTasks.removeValue(forKey: id) }
+                do {
+                    let copies = try await CloneBatch().sign(app: imported, options: options, icon: nil,
+                                                            certificate: certificate, count: download.copyCount)
+                    self.outcomes[id] = .copiesReady(copies)
+                } catch is CancellationError { self.outcomes[id] = .cancelled }
+                catch { self.outcomes[id] = .failed(error.localizedDescription) }
+            }
+            return
+        }
         signingTasks[id] = FR.signPackageFile(imported, using: options, icon: nil,
                            certificate: certificate, onSigned: { self.outcomes[id] = .ready($0) }) { error in
             self.signingTasks.removeValue(forKey: id)
