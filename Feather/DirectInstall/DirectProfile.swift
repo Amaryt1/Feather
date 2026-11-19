@@ -9,13 +9,17 @@ struct DirectProfile: Decodable {
         enum CodingKeys: String, CodingKey { case applicationIdentifier = "application-identifier" }
     }
 
-    static func read(_ url: URL) throws -> Self {
+    static func payload(_ url: URL) throws -> Data {
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         guard let start = data.range(of: Data("<?xml".utf8)),
               let end = data.range(of: Data("</plist>".utf8), in: start.upperBound..<data.endIndex) else {
             throw DirectError("تعذّرت قراءة ملف التزويد.")
         }
-        let profile = try PropertyListDecoder().decode(Self.self, from: data[start.lowerBound..<end.upperBound])
+        return data[start.lowerBound..<end.upperBound]
+    }
+
+    static func read(_ url: URL) throws -> Self {
+        let profile = try PropertyListDecoder().decode(Self.self, from: payload(url))
         guard profile.ExpirationDate > Date() else { throw DirectError("ملف التزويد منتهي الصلاحية.") }
         return profile
     }

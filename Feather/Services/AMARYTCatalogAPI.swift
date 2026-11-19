@@ -19,6 +19,7 @@ enum AMARYTCatalogAPI {
         let id: String
         let sourceId: String
         let name: String
+        let size: Int64?
         let bundleIdentifier: String
         let iconURL: String?
         let developerName: String?

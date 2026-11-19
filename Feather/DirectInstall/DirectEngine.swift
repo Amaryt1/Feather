@@ -50,6 +50,12 @@ final class DirectEngine: ObservableObject {
         }
     }()
 
+    private var cardHandoff: AnyCancellable?
+    func prepareFromCard(_ input: DirectInput) {
+        cardHandoff = $phase.filter { $0 == .ready }.prefix(1).receive(on: DispatchQueue.main).sink { [weak self] _ in self?.submit() }
+        prepare(input)
+    }
+
     func prepare(_ input: DirectInput) {
         guard work == nil else { return }
         if needsTrust, archive != nil, metadata != nil {
@@ -261,6 +267,7 @@ final class DirectEngine: ObservableObject {
     }
 
     func cancel() {
+        cardHandoff?.cancel()
         if let work { work.cancel() } else { clean() }
     }
 

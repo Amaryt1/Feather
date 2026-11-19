@@ -13,12 +13,13 @@ import AltSourceKit
 import IDeviceSwift
 
 enum FR {
+    @discardableResult
 	static func handlePackageFile(
 		_ ipa: URL,
 		download: Download? = nil,
 		sourceProvenance: SourceAppProvenance? = nil,
 		completion: @escaping (Error?) -> Void
-	) {
+	) -> Task<Void, Never> {
 		Task.detached {
 			let handler = AppFileHandler(
 				file: ipa,
@@ -28,7 +29,9 @@ enum FR {
 			
 			do {
 				try await handler.copy()
-				try await handler.extract()
+				try Task.checkCancellation()
+                try await handler.extract()
+                try Task.checkCancellation()
 				try await handler.move()
 				try await handler.addToDatabase()
                 download?.importedUUID = handler.importedUUID
@@ -45,6 +48,7 @@ enum FR {
 		}
 	}
 	
+    @discardableResult
 	static func signPackageFile(
 		_ app: AppInfoPresentable,
 		using options: Options,
@@ -52,7 +56,7 @@ enum FR {
 		certificate: CertificatePair?,
         onSigned: ((String) -> Void)? = nil,
 		completion: @escaping (Error?) -> Void
-	) {
+	) -> Task<Void, Never> {
 		Task.detached {
 			let handler = SigningHandler(app: app, options: options)
 			handler.appCertificate = certificate
@@ -60,7 +64,8 @@ enum FR {
 			
 			do {
 				try await handler.copy()
-				try await handler.modify()
+				try Task.checkCancellation()
+                try await handler.modify()
 				try? await handler.clean()
                 await MainActor.run { onSigned?(handler.signedUUID) }
 				await MainActor.run {

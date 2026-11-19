@@ -27,7 +27,7 @@ struct NewAppsView: View {
                     ScrollView {
                         LazyVStack(spacing: 16) {
                             ForEach(repository.apps, id: \.currentUniqueId) { app in
-                                NewAppFeatureCard(app: app, operationID: SourceOperationKey.make(sourceURL: AMARYTStoreFeed.url, repository: repository, app: app).id) {
+                                NewAppFeatureCard(app: app, route: .init(sourceURL: AMARYTStoreFeed.url, source: repository, app: app)) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
                                         sourceURL: AMARYTStoreFeed.url,
                                         source: repository,
@@ -151,7 +151,7 @@ struct NewAppsView: View {
 private struct NewAppFeatureCard: View {
     @Environment(\.storeAppearance) private var appearance
     let app: ASRepository.App
-    let operationID: String
+    let route: SourceAppsView.SourceAppRoute
     let open: () -> Void
 
     @State private var sampledColor: Color?
@@ -185,10 +185,7 @@ private struct NewAppFeatureCard: View {
     }
 
     var body: some View {
-        Button(action: open) {
-            cardContent
-        }
-        .buttonStyle(StorePressStyle())
+        cardContent
         .task(id: "\(appearance.rawValue)-\((app.bannerURL ?? app.iconURL)?.absoluteString ?? "" )") {
             if appearance != .professional { await sampleArtworkColor() }
         }
@@ -347,10 +344,7 @@ private struct NewAppFeatureCard: View {
 
             Spacer()
 
-            SourceActivityLabel(id: operationID, idle: "التفاصيل")
-                .fontWeight(.semibold)
-
-            Image(systemName: "chevron.forward")
+            CardInstallActions(route: route, details: open)
         }
         .font(.caption)
         .foregroundStyle(accent)

@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 source = Path("Feather/Views/Apps/AppsCatalogView.swift").read_text()
-category = source.split("enum AppsCatalogCategory:", 1)[1].split("private enum AppsCatalogSort:", 1)[0]
+category = source.split("enum AppsCatalogCategory:", 1)[1].split("struct AppsCatalogEntry:", 1)[0]
 category = "enum AppsCatalogCategory:" + category
 engine = source.split("enum RelatedApps {", 1)[1].split("    @MainActor\n    static func load", 1)[0]
 engine = "enum RelatedApps {" + engine + "}\n"

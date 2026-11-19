@@ -7,6 +7,7 @@ on:
       - 'Feather/**'
       - 'Tests/DirectInstall/**'
       - 'Tests/SourceOperations/**'
+      - 'Tests/StoreActions/**'
       - '.github/workflows/direct-install.yml'
   workflow_dispatch:
 permissions:
@@ -29,6 +30,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Check clone validation and catalog ordering
+        run: |
+          swiftc Feather/Views/Signing/ClonePolicy.swift Feather/DirectInstall/Direct{Policy,Profile}.swift Feather/Views/Apps/CatalogRank.swift Feather/Backend/Observable/SourceOperation.swift Tests/StoreActions/PolicyTests.swift -o "$RUNNER_TEMP/store-actions"
+          "$RUNNER_TEMP/store-actions"
       - name: Test source operation identity and lifecycle
         run: |
           swiftc Feather/Backend/Observable/SourceOperation.swift Tests/SourceOperations/StateTests.swift -o "$RUNNER_TEMP/source-tests"

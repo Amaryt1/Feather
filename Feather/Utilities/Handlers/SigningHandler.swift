@@ -62,7 +62,38 @@ final class SigningHandler: NSObject {
         try await _modify(publishToLibrary: false)
     }
 
-    private func _modify(publishToLibrary: Bool) async throws {
+    func signClone(expectedID: String) async throws {
+        try await _modify(publishToLibrary: true, cloneID: expectedID)
+    }
+
+    private func validateClone(_ root: URL, expectedID: String) throws {
+        guard Bundle(url: root)?.bundleIdentifier == expectedID,
+              let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else {
+            throw DirectError("تعذّر التحقق من معرّف النسخة.")
+        }
+        var bundles = [root]
+        while let url = files.nextObject() as? URL {
+            if ["app", "appex"].contains(url.pathExtension) { bundles.append(url) }
+        }
+        var seen = Set<String>()
+        for url in bundles {
+            try Task.checkCancellation()
+            let provisioning = url.appendingPathComponent("embedded.mobileprovision")
+            let profile = try DirectProfile.read(provisioning)
+            guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier,
+                  (id == expectedID || id.hasPrefix(expectedID + ".")), seen.insert(id).inserted,
+                  profile.permits(id), let exe = bundle.executableURL,
+                  let bytes = LCGetMachOEntitlements(exe.path),
+                  let claims = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any],
+                  let prefix = profile.Entitlements.applicationIdentifier.split(separator: ".").first,
+                  claims["application-identifier"] as? String == String(prefix) + "." + id,
+                  let raw = try PropertyListSerialization.propertyList(from: DirectProfile.payload(provisioning), format: nil) as? [String: Any],
+                  let grants = raw["Entitlements"] as? [String: Any], ClonePolicy.permits(claims, by: grants)
+            else { throw DirectError("تعذّر مطابقة صلاحيات الحزمة مع ملف تزويد النسخة: " + url.lastPathComponent) }
+        }
+    }
+
+    private func _modify(publishToLibrary: Bool, cloneID: String? = nil) async throws {
 		guard let movedAppPath = _movedAppPath else {
 			throw SigningFileHandlerError.appNotFound
 		}
@@ -70,7 +101,7 @@ final class SigningHandler: NSObject {
 		guard
 			let infoDictionary = NSDictionary(
 				contentsOf: movedAppPath.appendingPathComponent("Info.plist")
-			)!.mutableCopy() as? NSMutableDictionary
+			)?.mutableCopy() as? NSMutableDictionary
 		else {
 			throw SigningFileHandlerError.infoPlistNotFound
 		}
@@ -125,7 +156,7 @@ final class SigningHandler: NSObject {
 			_options.signingOption == .default,
 			appCertificate != nil
 		{
-			try await handler.sign(requireResult: !publishToLibrary)
+			try await handler.sign(requireResult: !publishToLibrary || cloneID != nil)
 //		} else if _options.signingOption == .adhoc {
 //			try await handler.adhocSign()
 		} else if _options.signingOption == .onlyModify {
@@ -134,7 +165,13 @@ final class SigningHandler: NSObject {
 			throw SigningFileHandlerError.missingCertifcate
 		}
 		
-		if publishToLibrary {
+		if let cloneID {
+            if let error = handler.hadError { throw error }
+            try validateClone(movedAppPath, expectedID: cloneID)
+            try Task.checkCancellation()
+        }
+        if publishToLibrary {
+            try Task.checkCancellation()
             try await self.move()
             try await self.addToDatabase()
         }

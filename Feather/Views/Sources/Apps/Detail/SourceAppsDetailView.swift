@@ -365,6 +365,7 @@ struct SourceAppsDetailView: View {
                 case .signing: ProgressView("جارٍ التوقيع")
                 case .ready: Label("جاهز للتثبيت", systemImage: "checkmark.seal")
                 case let .failed(message): Text(message).foregroundStyle(.red)
+                case .installed: Text("اكتمل التثبيت")
                 case .submitted: Text("تم إرسال طلب التثبيت إلى iOS")
                 case .cancelled: Text("أُلغيت العملية")
                 case nil: EmptyView()
@@ -374,7 +375,7 @@ struct SourceAppsDetailView: View {
         .font(.subheadline)
         .animation(motion ? StoreTheme.feedback : nil, value: busy)
         .onChange(of: outcome) { updated in
-            if case let .ready(uuid) = updated { presentSigned(uuid) }
+            if !CardInstallQueue.shared.owns(operationID), case let .ready(uuid) = updated { presentSigned(uuid) }
         }
         .alert("الشهادة مطلوبة", isPresented: $showCertificateAlert) {
             Button("إضافة شهادة") { showCertificates = true }

@@ -23,8 +23,26 @@ struct SourceOperationKey: Hashable {
     }
 }
 
+extension SourceOperationKey {
+    init?(encoded: String) {
+        guard encoded.hasPrefix("source:") else { return nil }
+        var bytes = encoded.utf8.dropFirst("source:".utf8.count)
+        var parts: [String] = []
+        for _ in 0..<4 {
+            guard let end = bytes.firstIndex(of: 58),
+                  let length = Int(String(decoding: bytes[..<end], as: UTF8.self)), length >= 0 else { return nil }
+            bytes = bytes.suffix(from: bytes.index(after: end))
+            guard length <= bytes.count, let part = String(bytes: bytes.prefix(length), encoding: .utf8) else { return nil }
+            parts.append(part)
+            bytes = bytes.dropFirst(length)
+        }
+        guard bytes.isEmpty else { return nil }
+        self.init(source: parts[0], app: parts[1], version: parts[2], url: parts[3])
+    }
+}
+
 enum SourceOutcome: Equatable {
-    case submitted, imported, signing, ready(String), failed(String), cancelled
+    case installed, submitted, imported, signing, ready(String), failed(String), cancelled
 }
 
 /// Active signing entries must survive navigation and history pruning.

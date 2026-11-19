@@ -27,7 +27,9 @@ struct InstallPreviewView: View {
 	
 	@State var isSharing: Bool
 	
-	init(app: AppInfoPresentable, isSharing: Bool = false) {
+	let sourceOperation: String?
+	init(app: AppInfoPresentable, isSharing: Bool = false, sourceOperation: String? = nil) {
+        self.sourceOperation = sourceOperation
 		self.app = app
 		self.isSharing = isSharing
 		let viewModel = InstallerStatusViewModel(isIdevice: UserDefaults.standard.integer(forKey: "Feather.installationMethod") == 1)
@@ -58,7 +60,16 @@ struct InstallPreviewView: View {
 			SafariRepresentableView(url: installer.pageEndpoint).ignoresSafeArea()
 		}
 		.onReceive(viewModel.$status) { newStatus in
-			if _installationMethod == 0 {
+			if let id = sourceOperation {
+                switch newStatus {
+                case .completed(.success): DownloadManager.shared.outcomes[id] = _installationMethod == 1 ? .installed : .submitted
+                case .completed(.failure(let error)): DownloadManager.shared.outcomes[id] = .failed(String(describing: error))
+                case .broken(let error): DownloadManager.shared.outcomes[id] = .failed(String(describing: error))
+                case .sendingPayload: DownloadManager.shared.outcomes[id] = .submitted
+                default: break
+                }
+            }
+            if _installationMethod == 0 {
 				if case .ready = newStatus {
 					if _serverMethod == 0 {
 						UIApplication.shared.open(URL(string: installer.iTunesLink)!)
@@ -72,7 +83,7 @@ struct InstallPreviewView: View {
 				}
 				
 				if case .installing = newStatus {
-					if progressTask == nil {
+					if sourceOperation == nil && progressTask == nil {
 						progressTask = startInstallProgressPolling(
 							bundleID: app.identifier!,
 							viewModel: viewModel
@@ -159,7 +170,7 @@ struct InstallPreviewView: View {
 							viewModel.status = .ready
 						}
 						
-						if case .installing = await viewModel.status {
+						if sourceOperation == nil, case .installing = await viewModel.status {
 							let task = await startInstallProgressPolling(
 								bundleID: app.identifier!,
 								viewModel: viewModel
@@ -193,6 +204,7 @@ struct InstallPreviewView: View {
 				await progressTask?.cancel()
 				
 				await MainActor.run {
+                    if let id = sourceOperation { DownloadManager.shared.outcomes[id] = .failed(error.localizedDescription) }
 					UIAlertController.showAlertWithOk(
 						title: .localized("Install"),
 						message: String(describing: error),

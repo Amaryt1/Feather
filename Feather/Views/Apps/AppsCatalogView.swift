@@ -514,19 +514,6 @@ enum AppsCatalogCategory: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-private enum AppsCatalogSort: String, CaseIterable {
-    case recommended, name, newest, largest
-
-    var title: String {
-        switch self {
-        case .recommended: "مقترح"
-        case .name: "الاسم"
-        case .newest: "الأحدث"
-        case .largest: "الأكبر حجماً"
-        }
-    }
-}
-
 struct AppsCatalogEntry: Identifiable, Sendable {
     let sourceURL: URL?
     let source: ASRepository
@@ -672,6 +659,48 @@ private final class CatalogOperationRoutes: ObservableObject {
     }
     @Published private var entries: [Key: Entry] = [:]
     func entry(_ app: AMARYTCatalogAPI.AppSummary) -> Entry? { entries[Key(app)] }
+    func resolve(_ summary: AMARYTCatalogAPI.AppSummary) async throws -> SourceAppsView.SourceAppRoute {
+        if let entry = entry(summary), entry.active { return entry.route }
+        guard let path = summary.detailPath else { throw DirectError("تفاصيل التطبيق غير متوفرة.") }
+            let data = try await AMARYTCatalogAPI.fetchDetail(path)
+            let object = try JSONSerialization.jsonObject(with: data)
+            guard let envelope = object as? [String: Any],
+                  let items = envelope["items"] as? [[String: Any]],
+                  let item = items.first(where: { ($0["id"] as? String) == summary.id }),
+                  let rawURL = item["downloadURL"] as? String,
+                  let url = URL(string: rawURL),
+                  ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
+                throw DirectError("رابط IPA غير متاح لهذا التطبيق")
+            }
+            let name = (item["name"] as? String) ?? summary.name
+            let version = (item["version"] as? String) ?? summary.version ?? "1.0"
+            let identifier = (item["bundleIdentifier"] as? String) ?? summary.bundleIdentifier
+            let appPayload: [String: Any] = [
+                "name": name,
+                "bundleIdentifier": identifier,
+                "version": version,
+                "downloadURL": url.absoluteString,
+                "iconURL": (item["iconURL"] as? String) ?? summary.iconURL ?? "",
+                "localizedDescription": (item["localizedDescription"] as? String) ?? "",
+                "developerName": (item["developerName"] as? String) ?? summary.developerName ?? ""
+            ]
+            // Decode through AltSourceKit, preserving its normal version and ID semantics.
+            let repositoryPayload: [String: Any] = [
+                "name": "AMARYT",
+                "identifier": "amaryt.api.\(summary.sourceId)",
+                "apps": [appPayload]
+            ]
+            let payload = try JSONSerialization.data(withJSONObject: repositoryPayload)
+            let repository = try JSONDecoder().decode(ASRepository.self, from: payload)
+            guard let app = repository.apps.first, app.currentDownloadUrl != nil else {
+                throw DirectError("بيانات التطبيق غير صالحة للتثبيت")
+            }
+            let route = SourceAppsView.SourceAppRoute(
+                sourceURL: (item["sourceURL"] as? String).flatMap { URL(string: $0) }, source: repository, app: app
+            )
+            record(route, for: summary)
+            return route
+    }
     func record(_ route: SourceAppsView.SourceAppRoute, for app: AMARYTCatalogAPI.AppSummary) {
         if entries.count >= 64 { entries = entries.filter { $0.value.active } }
         let id = SourceOperationKey.make(sourceURL: route.sourceURL, repository: route.source, app: route.app).id
@@ -679,19 +708,19 @@ private final class CatalogOperationRoutes: ObservableObject {
     }
 }
 
-private struct CatalogOperationLabel: View {
+private struct CatalogCardActions: View {
     let app: AMARYTCatalogAPI.AppSummary
-    let idle: String
+    let open: () -> Void
     @ObservedObject private var routes = CatalogOperationRoutes.shared
-    init(app: AMARYTCatalogAPI.AppSummary, idle: String) { self.app = app; self.idle = idle }
+    init(app: AMARYTCatalogAPI.AppSummary, open: @escaping () -> Void) { self.app = app; self.open = open }
     var body: some View {
-        if let entry = routes.entry(app) { SourceActivityLabel(id: entry.operationID, idle: idle) }
-        else { Text(idle) }
+        CardInstallActions(id: routes.entry(app)?.operationID, resolve: { try await routes.resolve(app) }, details: open)
     }
 }
 
 @MainActor
 struct AppsCatalogView: View {
+    @ObservedObject private var personalization = AppsCatalogPersonalization.shared
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
     nonisolated private static let privateFeedURLs: [URL] = [
         URL(string: "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json?utm_source=chatgpt.com")!,
@@ -959,15 +988,20 @@ struct AppsCatalogView: View {
         }
     }
 
+    private static let dateFormats: [ISO8601DateFormatter] = [
+        [.withInternetDateTime, .withFractionalSeconds], [.withInternetDateTime], [.withFullDate]
+    ].map { (options: ISO8601DateFormatter.Options) in
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = options
+        return parser
+    }
+
     private static func apiVersionDate(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: raw) { return date }
-        iso.formatOptions = [.withInternetDateTime]
-        if let date = iso.date(from: raw) { return date }
-        iso.formatOptions = [.withFullDate]
-        return iso.date(from: String(raw.prefix(10)))
+        for parser in dateFormats {
+            if let date = parser.date(from: raw) { return date }
+        }
+        return nil
     }
 
     // Keep exactly two full-width columns on iPad while preserving the adaptive iPhone layout.
@@ -1130,6 +1164,7 @@ struct AppsCatalogView: View {
 
     private func apply(_ index: AppsCatalogIndex) {
         repositories = index.repositories
+        indexRevision += 1
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
@@ -1142,48 +1177,91 @@ struct AppsCatalogView: View {
         let index = await Task.detached(priority: .userInitiated) {
             AppsCatalogIndex.build(from: snapshot)
         }.value
+        indexRevision += 1
         catalogEntries = index.entries
         entriesByCategory = index.entriesByCategory
         categoryCounts = index.categoryCounts
         recentlyUpdatedEntries = Self.recentUpdates(in: index.entries)
     }
 
-    private var filteredAPIApps: [AMARYTCatalogAPI.AppSummary] {
-        let query = StoreAppNameSearch.normalized(searchText)
-        guard !query.isEmpty else { return apiApps }
-        return apiApps.filter { StoreAppNameSearch.matches(name: $0.name, normalizedQuery: query) }
+    private enum CatalogItem: Identifiable, Sendable {
+        case api(AMARYTCatalogAPI.AppSummary)
+        case local(AppsCatalogEntry)
+        var id: String {
+            switch self { case .api(let app): "api:" + app.id
+            case .local(let entry): "source:" + entry.id }
+        }
+        var appIdentifier: String? {
+            switch self { case .api(let app): app.bundleIdentifier
+            case .local(let entry): entry.app.id }
+        }
+        var rank: CatalogRank {
+            switch self {
+            case .api(let app):
+                return CatalogRank(id: id, name: app.name, date: app.versionDate.flatMap { raw in (try? Date(raw, strategy: .iso8601)) ?? (try? Date(raw, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))) ?? (try? Date(raw, strategy: Date.ISO8601FormatStyle().year().month().day())) },
+                                   size: app.size.flatMap { $0 > 0 ? $0 : nil }, hasArtwork: !(app.iconURL ?? "").isEmpty)
+            case .local(let entry):
+                let app = entry.app
+                return CatalogRank(id: id, name: app.currentName, date: app.currentDate?.date,
+                                   size: (app.currentAppVersion?.size.flatMap { Int64(exactly: $0) } ?? app.size).flatMap { $0 > 0 ? $0 : nil },
+                                   hasArtwork: app.iconURL != nil)
+            }
+        }
     }
 
-    private var filteredEntries: [AppsCatalogEntry] {
-        var result = entries
-        let query = StoreAppNameSearch.normalized(searchText)
-        if !query.isEmpty {
-            result = result.filter { StoreAppNameSearch.matches(name: $0.app.currentName, normalizedQuery: query) }
-        }
+    @State private var items: [CatalogItem] = []
+    @State private var indexRevision = 0
+    @State private var ranked = false
 
-        switch sortOption {
-        case .recommended:
-            break
-        case .name:
-            result.sort { $0.app.currentName.localizedCaseInsensitiveCompare($1.app.currentName) == .orderedAscending }
-        case .newest:
-            result.sort { ($0.app.currentDate?.date ?? .distantPast) > ($1.app.currentDate?.date ?? .distantPast) }
-        case .largest:
-            result.sort { ($0.app.size ?? 0) > ($1.app.size ?? 0) }
+    private struct RankingInput: Equatable {
+        let revision: Int
+        let apiCount: Int
+        let sort: AppsCatalogSort
+        let query: String
+        let history: [Date]
+        let locale: String
+    }
+
+    private func refreshRanking() async {
+        let locals = entries, remote = apiApps, sort = sortOption
+        let query = StoreAppNameSearch.normalized(searchText)
+        var recent: [String: Date] = [:]
+        if sortOption == .recommended {
+            for record in personalization.downloadHistory {
+                if let key = SourceOperationKey(encoded: record.id) {
+                    recent[key.app] = max(recent[key.app] ?? .distantPast, record.date)
+                }
+            }
         }
-        return result
+        let history = recent
+        let worker = Task.detached(priority: .userInitiated) {
+            let candidates = remote.map(CatalogItem.api) + locals.map(CatalogItem.local)
+            var rows: [(CatalogItem, CatalogRank)] = []
+            for item in candidates {
+                if Task.isCancelled { return [CatalogItem]() }
+                var rank = item.rank
+                if !query.isEmpty && !StoreAppNameSearch.matches(name: rank.name, normalizedQuery: query) { continue }
+                rank.lastDownload = item.appIdentifier.flatMap { history[$0] }
+                rows.append((item, rank))
+            }
+            return rows.sorted { $0.1.precedes($1.1, sort: sort) }.map { $0.0 }
+        }
+        let ordered = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+        guard !Task.isCancelled else { return }
+        items = ordered
+        ranked = true
     }
 
     var body: some View {
-        NBNavigationView("التطبيقات") {
+        return NBNavigationView("التطبيقات") {
             VStack(spacing: 0) {
                 catalogControls
 
-                if isLoading && repositories.isEmpty {
+                if !ranked || (isLoading && repositories.isEmpty) {
                     Spacer()
                     ProgressView("جارٍ تحميل التطبيقات…")
                     Spacer()
-                } else if filteredEntries.isEmpty && filteredAPIApps.isEmpty {
+                } else if items.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "square.grid.3x3")
                             .font(.system(size: 34))
@@ -1193,6 +1271,9 @@ struct AppsCatalogView: View {
                         Text("تحقق من اتصال الإنترنت أو جرّب تحميل القائمة من جديد.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                        if let manifest = apiManifest, apiNextPage < manifest.pageCount {
+                            Button("بحث في المزيد من التطبيقات") { Task { await loadAPIPage() } }
+                        }
                         if catalogEntries.isEmpty {
                             Button {
                                 Task { await loadPrivateFeeds(force: true) }
@@ -1208,8 +1289,9 @@ struct AppsCatalogView: View {
                 } else {
                     ScrollView {
                         LazyVGrid(columns: catalogGridColumns, spacing: 16) {
-                            ForEach(filteredAPIApps) { app in
-                                Button { Task { await openAPIApp(app) } } label: {
+                            ForEach(items) { item in
+                                Group { switch item {
+                                case .api(let app):
                                     VStack(alignment: .leading, spacing: 9) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: 20).fill(Color.accentColor.opacity(0.12))
@@ -1228,27 +1310,23 @@ struct AppsCatalogView: View {
                                         Text(AppDescriptionSanitizer.clean(app.subtitle ?? app.sourceId)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                         HStack {
                                             Text(app.version.map { "v\($0)" } ?? "API").font(.caption2)
-                                            Spacer()
-                                            CatalogOperationLabel(app: app, idle: "التفاصيل").font(.caption)
                                         }
+                                        CatalogCardActions(app: app) { Task { await openAPIApp(app) } }
                                     }
-                                    .foregroundStyle(.primary)
                                     .padding(StoreTheme.inset)
                                     .storeCard()
-                                }
-                                .buttonStyle(StorePressStyle())
-                                .onAppear {
-                                    if apiApps.last?.id == app.id {
-                                        Task { await loadAPIPage() }
-                                    }
-                                }
-                            }
-                            ForEach(filteredEntries) { entry in
+                                case .local(let entry):
                                 AppsCatalogPremiumCard(entry: entry) {
                                     selectedRoute = SourceAppsView.SourceAppRoute(
                                         sourceURL: entry.sourceURL, source: entry.source, app: entry.app
                                     )
                                 }
+                                } }
+
+                            }
+                            if let manifest = apiManifest, apiNextPage < manifest.pageCount {
+                                Button("تحميل المزيد") { Task { await loadAPIPage() } }
+                                    .task(id: apiNextPage) { await loadAPIPage() }
                             }
                         }
                         .padding(.horizontal, 14)
@@ -1265,6 +1343,10 @@ struct AppsCatalogView: View {
                     }
 
                 }
+            }
+            .task(id: RankingInput(revision: indexRevision, apiCount: apiApps.count, sort: sortOption, query: searchText,
+                                   history: personalization.downloadHistory.map(\.date), locale: Locale.current.identifier)) {
+                await refreshRanking()
             }
             .storeScreen()
             .animation(storeMotion ? StoreTheme.feedback : nil, value: searchText)
@@ -1320,62 +1402,12 @@ struct AppsCatalogView: View {
         }
     }
 
-    /// Convert the selected remote detail into Feather's existing AltStore model.
-    /// The standard detail screen then owns Get, download, signing and library behavior.
-    @MainActor
-    private func openAPIApp(_ summary: AMARYTCatalogAPI.AppSummary) async {
-        if let entry = CatalogOperationRoutes.shared.entry(summary), entry.active {
-            selectedRoute = entry.route
-            return
-        }
-        guard !apiOpeningApp, let path = summary.detailPath else { return }
+    private func openAPIApp(_ app: AMARYTCatalogAPI.AppSummary) async {
+        guard !apiOpeningApp else { return }
         apiOpeningApp = true
         defer { apiOpeningApp = false }
-        do {
-            let data = try await AMARYTCatalogAPI.fetchDetail(path)
-            let object = try JSONSerialization.jsonObject(with: data)
-            guard let envelope = object as? [String: Any],
-                  let items = envelope["items"] as? [[String: Any]],
-                  let item = items.first(where: { ($0["id"] as? String) == summary.id }),
-                  let rawURL = item["downloadURL"] as? String,
-                  let url = URL(string: rawURL),
-                  ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
-                apiError = "رابط IPA غير متاح لهذا التطبيق"
-                return
-            }
-            let name = (item["name"] as? String) ?? summary.name
-            let version = (item["version"] as? String) ?? summary.version ?? "1.0"
-            let identifier = (item["bundleIdentifier"] as? String) ?? summary.bundleIdentifier
-            let appPayload: [String: Any] = [
-                "name": name,
-                "bundleIdentifier": identifier,
-                "version": version,
-                "downloadURL": url.absoluteString,
-                "iconURL": (item["iconURL"] as? String) ?? summary.iconURL ?? "",
-                "localizedDescription": (item["localizedDescription"] as? String) ?? "",
-                "developerName": (item["developerName"] as? String) ?? summary.developerName ?? ""
-            ]
-            // Decode through AltSourceKit, preserving its normal version and ID semantics.
-            let repositoryPayload: [String: Any] = [
-                "name": "AMARYT",
-                "identifier": "amaryt.api.\(summary.sourceId)",
-                "apps": [appPayload]
-            ]
-            let payload = try JSONSerialization.data(withJSONObject: repositoryPayload)
-            let repository = try JSONDecoder().decode(ASRepository.self, from: payload)
-            guard let app = repository.apps.first, app.currentDownloadUrl != nil else {
-                apiError = "بيانات التطبيق غير صالحة للتثبيت"
-                return
-            }
-            let route = SourceAppsView.SourceAppRoute(
-                sourceURL: (item["sourceURL"] as? String).flatMap { URL(string: $0) }, source: repository, app: app
-            )
-            CatalogOperationRoutes.shared.record(route, for: summary)
-            selectedRoute = route
-            apiError = nil
-        } catch {
-            apiError = "تعذر فتح تفاصيل التطبيق: \(error.localizedDescription)"
-        }
+        do { selectedRoute = try await CatalogOperationRoutes.shared.resolve(app); apiError = nil }
+        catch { apiError = error.localizedDescription }
     }
 
     @MainActor
@@ -1574,7 +1606,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                                         }
                                         .foregroundStyle(.secondary)
                                         VStack(alignment: .leading, spacing: 11) {
-                                            Button { openAPI(app) } label: {
+                                            Group {
                                                 VStack(alignment: .leading, spacing: 10) {
                                                     ZStack(alignment: .topTrailing) {
                                                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1615,13 +1647,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                                                 Text(app.version.map { "v\($0)" } ?? "Feather Store")
                                                     .font(.caption2).foregroundStyle(.secondary)
                                                 Spacer(minLength: 2)
-                                                Button { openAPI(app) } label: {
-                                                    CatalogOperationLabel(app: app, idle: "الحصول")
-                                                        .font(.subheadline.weight(.semibold))
-                                                        .padding(.horizontal, 18).padding(.vertical, 7)
-                                                        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: Capsule())
-                                                }
-                                                .buttonStyle(.borderless)
+                                                CatalogCardActions(app: app) { openAPI(app) }
                                             }
                                         }
                                         .padding(StoreTheme.inset)
@@ -1667,7 +1693,7 @@ private struct AppsCatalogPremiumCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
-            Button(action: open) {
+            Group {
                 VStack(alignment: .leading, spacing: 10) {
                     ZStack(alignment: .topTrailing) {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1716,7 +1742,6 @@ private struct AppsCatalogPremiumCard: View {
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
-            .buttonStyle(StorePressStyle())
 
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
@@ -1727,9 +1752,8 @@ private struct AppsCatalogPremiumCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 2)
-                DownloadButtonView(sourceURL: entry.sourceURL, source: entry.source, app: entry.app, opensDetails: true)
-                    .scaleEffect(0.92)
             }
+            CardInstallActions(route: .init(sourceURL: entry.sourceURL, source: entry.source, app: entry.app), details: open)
         }
         .padding(StoreTheme.inset)
         .storeCard()

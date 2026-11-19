@@ -33,6 +33,7 @@ class Download: ObservableObject, Identifiable, @unchecked Sendable {
 	let fileName: String
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
+    var packageTask: Task<Void, Never>?
     var signingCertificate: CertificatePair?
     @Published var packaging = false
     var sampleTime = ProcessInfo.processInfo.systemUptime
@@ -58,6 +59,7 @@ class DownloadManager: NSObject, ObservableObject {
 	static let shared = DownloadManager()
 	
 	@Published var outcomes = SourceOutcomes()
+    private var signingTasks: [String: Task<Void, Never>] = [:]
     var localSessionIDs = Set<String>()
 	@Published var downloads: [Download] = []
 	
@@ -175,9 +177,10 @@ class DownloadManager: NSObject, ObservableObject {
 	}
 	
 	func cancelDownload(_ download: Download) {
-		guard !download.packaging, downloads.contains(where: { $0 === download }) else { return }
+		guard downloads.contains(where: { $0 === download }) else { return }
         if download.id.hasPrefix("source:") { outcomes[download.id] = .cancelled }
-		download.task?.cancel()
+		download.packageTask?.cancel()
+        download.task?.cancel()
 		
 		if let index = downloads.firstIndex(where: { $0.id == download.id }) {
 			downloads.remove(at: index)
@@ -211,7 +214,11 @@ class DownloadManager: NSObject, ObservableObject {
 
 extension DownloadManager: URLSessionDownloadDelegate {
 	
-	private func signImported(_ download: Download, certificate: CertificatePair) {
+	func cancelSigning(_ id: String) {
+        signingTasks[id]?.cancel()
+    }
+
+    private func signImported(_ download: Download, certificate: CertificatePair) {
         let request = NSFetchRequest<Imported>(entityName: "Imported")
         request.fetchLimit = 1
         guard let uuid = download.importedUUID else {
@@ -225,14 +232,19 @@ extension DownloadManager: URLSessionDownloadDelegate {
         }
         let id = download.id
         outcomes[id] = .signing
-        FR.signPackageFile(imported, using: OptionsManager.shared.options, icon: nil,
+        var options = OptionsManager.shared.options
+        options.signingOption = .default
+        signingTasks[id] = FR.signPackageFile(imported, using: options, icon: nil,
                            certificate: certificate, onSigned: { self.outcomes[id] = .ready($0) }) { error in
-            if let error { self.outcomes[id] = .failed(error.localizedDescription) }
+            self.signingTasks.removeValue(forKey: id)
+            if let error { self.outcomes[id] = error is CancellationError ? .cancelled : .failed(error.localizedDescription) }
         }
     }
 
     func handlePachageFile(url: URL, dl: Download) throws {
-		FR.handlePackageFile(url, download: dl) { err in
+		dl.packageTask = FR.handlePackageFile(url, download: dl) { err in
+            dl.packageTask = nil
+            guard self.downloads.contains(where: { $0 === dl }) else { return }
             if dl.id.hasPrefix("source:") {
                 if let err { self.outcomes[dl.id] = .failed(err.localizedDescription) }
                 else if let certificate = dl.signingCertificate {

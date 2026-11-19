@@ -49,6 +49,7 @@ struct FeatherApp: App {
                     AMARYTWelcomeView().transition(.opacity).zIndex(1)
                 }
             }
+            .modifier(CardInstallHost())
             .modifier(StoreThemeHost())
             .task {
                 try? await Task.sleep(for: .seconds(2.5))

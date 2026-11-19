@@ -21,6 +21,9 @@ struct SigningView: View {
 	@State private var _isImagePickerPresenting = false
 	@State private var _isSigning = false
 	@State private var _selectedPhoto: PhotosPickerItem? = nil
+	@StateObject private var batch = CloneBatch()
+    @State private var copies = 1
+    @State private var showBatch = false
 	@State var appIcon: UIImage?
 	
 	// MARK: Fetch
@@ -48,7 +51,11 @@ struct SigningView: View {
 		NBNavigationView("", displayMode: .inline) {
 			Form {
 				_customizationOptions(for: app)
-				_cert()
+                _cert()
+                Section("تكرار التطبيق") {
+                    Stepper("عدد النسخ: \(copies)", value: $copies, in: 1...ClonePolicy.limit)
+                    if copies > 1 { Text("تُحفظ النسخ الموقّعة في المكتبة. تحتفظ الأولى بمعرّف التطبيق الأصلي.").font(.caption) }
+                }
 				_customizationProperties(for: app)
 				
 				// horrible
@@ -80,18 +87,13 @@ struct SigningView: View {
             .storeScreen()
 			.toolbar {
 				NBToolbarButton(role: .dismiss)
-				ToolbarItem(placement: .principal) {
-					Image("Glyph")
-						.resizable()
-						.scaledToFit()
-						.frame(height: 38)
-				}
 				NBToolbarButton(
 					.localized("Reset"),
 					style: .text,
 					placement: .topBarTrailing
 				) {
 					_temporaryOptions = OptionsManager.shared.options
+                    copies = 1
 					appIcon = nil
 				}
 			}
@@ -117,7 +119,17 @@ struct SigningView: View {
 					}
 				}
 			}
-			.disabled(_isSigning)
+			.disabled(_isSigning || batch.running)
+            .sheet(isPresented: $showBatch) {
+                NavigationStack {
+                    List {
+                        Text(batch.stage)
+                        ForEach(batch.results, id: \.self) { Text($0) }
+                        if batch.running { ProgressView(); Button("إلغاء التوقيع") { batch.cancel() } }
+                        else { Button("تم") { showBatch = false } }
+                    }.storeScreen().navigationTitle("توقيع النسخ")
+                }.interactiveDismissDisabled(batch.running)
+            }
 			.animation(.smooth, value: _isSigning)
 		}
 		.onAppear {
@@ -265,6 +277,11 @@ extension SigningView {
 // MARK: - Extension: View (import)
 extension SigningView {
 	private func _start() {
+        if copies > 1 {
+            showBatch = true
+            batch.start(app: app, options: _temporaryOptions, icon: appIcon, certificate: _selectedCert(), count: copies)
+            return
+        }
 		guard
 			_selectedCert() != nil || _temporaryOptions.signingOption != .default
 		else {
