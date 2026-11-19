@@ -30,7 +30,7 @@ struct StoreActionTests {
         precondition(occupiedPlan == [base, base + ".2"])
         let single = try ClonePolicy.identifiers(base: base, count: 1, occupied: [], profile: exact)
         precondition(single == [base])
-        for (count, occupied, profile) in [(2, Set<String>(), exact), (0, [], wildcard), (11, [], wildcard)] {
+        for (count, occupied, profile) in [(2, Set<String>(), exact), (0, [], wildcard), (102, [], wildcard)] {
             precondition((try? ClonePolicy.identifiers(base: base, count: count, occupied: occupied, profile: profile)) == nil)
         }
         let firstAdditional = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 2, occupied: [])
@@ -70,6 +70,19 @@ struct StoreActionTests {
             base: external, original: external, selection: 2,
             occupied: [allowedClone], profile: wildcard)
         precondition(next == "com.example.com-other-player.2")
+        // One-click cloning follows the manual Bundle ID edit; no implicit
+        // rebasing to a different certificate ID is performed by this planner.
+        let firstManualStyleClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 2, occupied: [])
+        precondition(firstManualStyleClone == "com.external.player.1")
+        let nextManualStyleClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 2, occupied: ["com.external.player.1"])
+        precondition(nextManualStyleClone == "com.external.player.2")
+        let hundredthClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 101, occupied: [])
+        precondition(hundredthClone == "com.external.player.100")
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 102, occupied: [])) == nil)
         let edited = "com.example.manual"
         let reviewed = try ClonePolicy.identifiers(base: edited, count: 3, occupied: ["COM.EXAMPLE.MANUAL.1"], profile: wildcard)
         precondition(reviewed == [edited, edited + ".2", edited + ".3"])
