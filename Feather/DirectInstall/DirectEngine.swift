@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import IDeviceSwift
 private struct StagedApp: AppInfoPresentable {
     let identifier: String?
     var nameOverride: String? = nil
