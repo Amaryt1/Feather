@@ -62,6 +62,15 @@ final class SigningHandler: NSObject {
         try await _modify(publishToLibrary: false)
     }
 
+    func signStoreUpdate(at url: URL, expectedID: String) async throws {
+        try _fileManager.createDirectoryIfNeeded(at: _uniqueWorkDir)
+        try prepareCloneEntitlements(at: url, rootID: expectedID)
+        let signer = ZsignHandler(appUrl: url, options: _options, cert: appCertificate)
+        try await signer.sign(requireResult: true)
+        if let error = signer.hadError { throw error }
+        try validateClone(url, expectedID: expectedID)
+    }
+
     func signClone(expectedID: String) async throws {
         try await _modify(publishToLibrary: true, cloneID: expectedID)
     }
@@ -191,7 +200,7 @@ final class SigningHandler: NSObject {
 			_options.signingOption == .default,
 			appCertificate != nil
 		{
-			try await handler.sign(requireResult: !publishToLibrary || cloneID != nil)
+			try await handler.sign(requireResult: true)
 //		} else if _options.signingOption == .adhoc {
 //			try await handler.adhocSign()
 		} else if _options.signingOption == .onlyModify {
@@ -200,20 +209,23 @@ final class SigningHandler: NSObject {
 			throw SigningFileHandlerError.missingCertifcate
 		}
 		
-		if let cloneID {
-            if let error = handler.hadError { throw error }
+		if let error = handler.hadError { throw error }
+        if let cloneID {
             try validateClone(movedAppPath, expectedID: cloneID)
             try Task.checkCancellation()
         }
         if publishToLibrary {
             try Task.checkCancellation()
             try await self.move()
-            try await self.addToDatabase()
+            do {
+                try await self.addToDatabase()
+            } catch {
+                // move() created this private output directory for this signing attempt.
+                try? _fileManager.removeItem(at: _fileManager.signed(_uuid))
+                throw error
+            }
         }
 		
-		if let error = handler.hadError {
-			throw error
-		}
 	}
 	
 	func move() async throws {
@@ -233,30 +245,17 @@ final class SigningHandler: NSObject {
 		try? _fileManager.removeItem(at: _uniqueWorkDir)
 	}
 	
-	func addToDatabase() async throws {
-		let app = try await _directory()
-		
-		guard let appUrl = _fileManager.getPath(in: app, for: "app") else {
-			return
-		}
-		
-		await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-			let bundle = Bundle(url: appUrl)
-			
-			Storage.shared.addSigned(
-				uuid: _uuid,
-				source: _app.source,
-				certificate: _options.signingOption != .default ? nil : appCertificate,
-				appName: bundle?.name,
-				appIdentifier: bundle?.bundleIdentifier,
-				appVersion: bundle?.version,
-				appIcon: bundle?.iconFileName
-			) { _ in
-				Logger.signing.info("[\(self._uuid)] Added to database")
-				continuation.resume()
-			}
-		}
-		
+    @MainActor private func addToDatabase() async throws {
+        let directory = try await _directory()
+        guard let url = _fileManager.getPath(in: directory, for: "app"),
+              let bundle = Bundle(url: url),
+              let identifier = NSDictionary(contentsOf: url.appendingPathComponent("Info.plist"))?["CFBundleIdentifier"] as? String else {
+            throw SigningFileHandlerError.infoPlistNotFound
+        }
+        try Storage.shared.addSigned(uuid: _uuid, source: _app.source,
+                                     certificate: _options.signingOption == .default ? appCertificate : nil,
+                                     appName: bundle.name, appIdentifier: identifier,
+                                     appVersion: bundle.version, appIcon: bundle.iconFileName)
 		Storage.shared.copySourceMetadata(
 			from: _app.uuid,
 			to: _uuid,
@@ -389,7 +388,7 @@ extension SigningHandler {
 			
 			// CFBundleIdentifier
 			if let oldValue = infoDict["CFBundleIdentifier"] as? String {
-				let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
+				let newValue = ClonePolicy.rebased(oldValue, from: oldIdentifier, to: newIdentifier)
 				if oldValue != newValue {
 					infoDict["CFBundleIdentifier"] = newValue
 					didChange = true
@@ -398,7 +397,7 @@ extension SigningHandler {
 			
 			// WKCompanionAppBundleIdentifier
 			if let oldValue = infoDict["WKCompanionAppBundleIdentifier"] as? String {
-				let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
+				let newValue = ClonePolicy.rebased(oldValue, from: oldIdentifier, to: newIdentifier)
 				if oldValue != newValue {
 					infoDict["WKCompanionAppBundleIdentifier"] = newValue
 					didChange = true
@@ -410,7 +409,7 @@ extension SigningHandler {
 					let attributes = (extensionDict["NSExtensionAttributes"] as? NSDictionary)?.mutableCopy() as? NSMutableDictionary,
 					let oldValue = attributes["WKAppBundleIdentifier"] as? String
 				{
-					let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
+					let newValue = ClonePolicy.rebased(oldValue, from: oldIdentifier, to: newIdentifier)
 					if oldValue != newValue {
 						attributes["WKAppBundleIdentifier"] = newValue
                         extensionDict["NSExtensionAttributes"] = attributes
@@ -418,22 +417,11 @@ extension SigningHandler {
 					}
 				}
                 
-				// NSExtension → NSExtensionFileProviderDocumentGroup
-				if
-					let oldValue = extensionDict["NSExtensionFileProviderDocumentGroup"] as? String
-				{
-					let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
-					if oldValue != newValue {
-						extensionDict["NSExtensionFileProviderDocumentGroup"] = newValue
-						didChange = true
-					}
-				}
-                
 				infoDict["NSExtension"] = extensionDict
 			}
 			
-			if didChange {
-				infoDict.write(to: infoPlistURL, atomically: true)
+			if didChange && !infoDict.write(to: infoPlistURL, atomically: true) {
+                throw DirectError("تعذّر حفظ معرّف الامتداد " + bundleURL.lastPathComponent)
 			}
 		}
 	}

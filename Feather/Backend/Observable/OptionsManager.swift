@@ -257,3 +257,11 @@ extension LocalizedDescribable where Self: RawRepresentable, RawValue == String 
 		return localized == self.rawValue ? self.rawValue : localized
 	}
 }
+
+extension Options {
+    func signingBase(for original: String?, certificate: CertificatePair?, manual: String? = nil) -> String? {
+        ClonePolicy.signingBase(original: original, manual: manual, mappings: identifiers,
+                                ppqSuffix: ppqProtection && certificate?.ppQCheck == true ? ppqString : nil,
+                                preferred: appIdentifier)
+    }
+}

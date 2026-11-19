@@ -30,9 +30,75 @@ struct StoreActionTests {
         precondition(occupiedPlan == [base, base + ".2"])
         let single = try ClonePolicy.identifiers(base: base, count: 1, occupied: [], profile: exact)
         precondition(single == [base])
-        for (count, occupied, profile) in [(2, Set<String>(), exact), (0, [], wildcard), (11, [], wildcard)] {
+        for (count, occupied, profile) in [(2, Set<String>(), exact), (0, [], wildcard), (102, [], wildcard)] {
             precondition((try? ClonePolicy.identifiers(base: base, count: count, occupied: occupied, profile: profile)) == nil)
         }
+        let importedID = "com.guohua.ciner"
+        let resolved = ClonePolicy.signingBase(original: importedID, manual: nil,
+                                               mappings: ["catalog.alias": "wrong"], ppqSuffix: nil, preferred: nil)
+        precondition(resolved == importedID)
+        let clone = try ClonePolicy.selectedCloneIdentifier(base: resolved!, selection: 2, occupied: [importedID])
+        precondition(clone == importedID + ".1")
+        let concurrent = try ClonePolicy.selectedCloneIdentifier(base: resolved!, selection: 2, occupied: [clone])
+        precondition(concurrent == importedID + ".2")
+        precondition(ClonePolicy.signingBase(original: importedID, manual: "com.custom", mappings: [importedID: "other"],
+                                             ppqSuffix: "suffix", preferred: nil) == "com.custom")
+        let firstAdditional = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 2, occupied: [])
+        precondition(firstAdditional == base + ".1")
+        let nextAdditional = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 2, occupied: [base + ".1"])
+        precondition(nextAdditional == base + ".2")
+        let selectedThird = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 3, occupied: [])
+        precondition(selectedThird == base + ".2")
+        precondition((try? ClonePolicy.selectedCloneIdentifier(base: base, selection: 1, occupied: [])) == nil)
+        // An exact provisioning profile can sign its one registered app ID as
+        // a second install only when it is different from the original and unused.
+        let fixedClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.unrelated.player", original: "com.unrelated.player",
+            selection: 2, occupied: [], profile: exact)
+        precondition(fixedClone == base)
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: "com.unrelated.player", original: "com.unrelated.player",
+            selection: 2, occupied: [base], profile: exact)) == nil)
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: base, original: base, selection: 2,
+            occupied: [], profile: exact)) == nil)
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: "com.unrelated.player", original: "com.unrelated.player",
+            selection: 3, occupied: [], profile: exact)) == nil)
+        // A wildcard profile accepts the original .1 path when possible.
+        let allowedOriginalClone = try ClonePolicy.selectedCloneIdentifier(
+            base: base, original: base, selection: 2,
+            occupied: [], profile: wildcard)
+        precondition(allowedOriginalClone == base + ".1")
+        // If the source app is outside the wildcard, only the clone is rebased.
+        let external = "com.other.player"
+        let allowedClone = try ClonePolicy.selectedCloneIdentifier(
+            base: external, original: external, selection: 2,
+            occupied: [], profile: wildcard)
+        precondition(allowedClone == "com.example.com-other-player.1" && wildcard.permits(allowedClone))
+        let next = try ClonePolicy.selectedCloneIdentifier(
+            base: external, original: external, selection: 2,
+            occupied: [allowedClone], profile: wildcard)
+        precondition(next == "com.example.com-other-player.2")
+        // One-click cloning follows the manual Bundle ID edit; no implicit
+        // rebasing to a different certificate ID is performed by this planner.
+        let firstManualStyleClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 2, occupied: [])
+        precondition(firstManualStyleClone == "com.external.player.1")
+        let nextManualStyleClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 2, occupied: ["com.external.player.1"])
+        precondition(nextManualStyleClone == "com.external.player.2")
+        let hundredthClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 101, occupied: [])
+        precondition(hundredthClone == "com.external.player.100")
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: "com.external.player", selection: 102, occupied: [])) == nil)
+        let edited = "com.example.manual"
+        let reviewed = try ClonePolicy.identifiers(base: edited, count: 3, occupied: ["COM.EXAMPLE.MANUAL.1"], profile: wildcard)
+        precondition(reviewed == [edited, edited + ".2", edited + ".3"])
+        precondition(ClonePolicy.rebased(base + ".widget", from: base, to: edited) == edited + ".widget")
+        precondition(ClonePolicy.rebased(base + "le.widget", from: base, to: edited) == base + "le.widget")
+        precondition((try? ClonePolicy.identifiers(base: edited, count: 2, occupied: [], profile: exact)) == nil)
         let grants: [String: Any] = ["application-identifier": "TEAM.com.example.*", "keychain-access-groups": ["TEAM.*"]]
         let source = ["application-identifier": "OLD.com.example.app", "keychain-access-groups": ["OLD.com.example.app"]] as [String: Any]
         let claims = try ClonePolicy.claims(source, id: base + ".1", profile: wildcard, grants: grants)

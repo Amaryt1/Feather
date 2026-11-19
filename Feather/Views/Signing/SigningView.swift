@@ -23,6 +23,8 @@ struct SigningView: View {
 	@State private var _selectedPhoto: PhotosPickerItem? = nil
 	@StateObject private var batch = CloneBatch()
     @State private var copies = 1
+    @State private var reviewedIDs: [String] = []
+    @State private var initializedOptions = false
     @State private var showBatch = false
 	@State var appIcon: UIImage?
 	
@@ -53,8 +55,11 @@ struct SigningView: View {
 				_customizationOptions(for: app)
                 _cert()
                 Section("تكرار التطبيق") {
-                    Stepper("عدد النسخ: \(copies)", value: $copies, in: 1...ClonePolicy.limit)
-                    if copies > 1 { Text("تُحفظ النسخ الموقّعة في المكتبة. تحتفظ الأولى بمعرّف التطبيق الأصلي.").font(.caption) }
+                    Stepper(copies == 1 ? "التطبيق الأصلي" : "النسخة الإضافية · الاختيار \(copies - 1)", value: $copies, in: 1...ClonePolicy.limit)
+                    if copies > 1 {
+                        ClonePlanView(base: _temporaryOptions.appIdentifier ?? app.identifier ?? "",
+                                      original: app.identifier, count: copies, certificate: _selectedCert(), approved: $reviewedIDs)
+                    }
                 }
 				_customizationProperties(for: app)
 				
@@ -78,6 +83,7 @@ struct SigningView: View {
 									.padding()
 							}
 							.buttonStyle(.plain)
+                            .disabled(copies > 1 && reviewedIDs.count != 1)
 							.offset(y: UIDevice.current.userInterfaceIdiom == .pad ? -20 : -40)
 						}
 				}
@@ -127,29 +133,19 @@ struct SigningView: View {
                         ForEach(batch.results, id: \.self) { Text($0) }
                         if batch.running { ProgressView(); Button("إلغاء التوقيع") { batch.cancel() } }
                         else { Button("تم") { showBatch = false } }
-                    }.storeScreen().navigationTitle("توقيع النسخ")
+                    }.storeScreen().navigationTitle("توقيع النسخة")
                 }.interactiveDismissDisabled(batch.running)
             }
 			.animation(.smooth, value: _isSigning)
 		}
 		.onAppear {
-			// ppq protection
-			if
-				_optionsManager.options.ppqProtection,
-				let identifier = app.identifier,
-				let cert = _selectedCert(),
-				cert.ppQCheck
-			{
-				_temporaryOptions.appIdentifier = "\(identifier).\(_optionsManager.options.ppqString)"
-			}
-			
-			if
-				let currentBundleId = app.identifier,
-				let newBundleId = _temporaryOptions.identifiers[currentBundleId]
-			{
-				_temporaryOptions.appIdentifier = newBundleId
-			}
-			
+			guard !initializedOptions else { return }
+            initializedOptions = true
+            let initial = _temporaryOptions.signingBase(for: app.identifier, certificate: _selectedCert())
+            if initial != app.identifier || _temporaryOptions.appIdentifier != nil {
+                _temporaryOptions.appIdentifier = initial
+            }
+
 			if
 				let currentName = app.name,
 				let newName = _temporaryOptions.displayNames[currentName]
@@ -214,9 +210,9 @@ extension SigningView {
 					)
 				}
 			} else {
-				Text(.localized("No Certificate"))
-					.font(.footnote)
-					.foregroundColor(.disabled())
+                NavigationLink("إضافة شهادة أو اختيار ملف تزويد") {
+                    CertificatesView(selectedCert: $_temporaryCertificate)
+                }
 			}
 		}
 	}

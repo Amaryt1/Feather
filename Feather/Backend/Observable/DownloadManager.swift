@@ -34,6 +34,7 @@ class Download: ObservableObject, Identifiable, @unchecked Sendable {
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
     var packageTask: Task<Void, Never>?
+    var cloneBaseOverride: String?
     var copyCount = 1
     var signingCertificate: CertificatePair?
     @Published var packaging = false
@@ -60,6 +61,7 @@ class DownloadManager: NSObject, ObservableObject {
 	static let shared = DownloadManager()
 	
 	@Published var outcomes = SourceOutcomes()
+    @Published private(set) var signingIdentifiers: [String: String] = [:]
     private var signingTasks: [String: Task<Void, Never>] = [:]
     var localSessionIDs = Set<String>()
 	@Published var downloads: [Download] = []
@@ -93,7 +95,7 @@ class DownloadManager: NSObject, ObservableObject {
 		id: String = UUID().uuidString,
 		sourceProvenance: SourceAppProvenance? = nil,
         signingCertificate: CertificatePair? = nil,
-        copyCount: Int = 1
+        copyCount: Int = 1, cloneBaseOverride: String? = nil
     ) -> Download? {
         guard outcomes[id] != .signing, !localSessionIDs.contains(id) else { return nil }
         let sourceOperation = id.hasPrefix("source:")
@@ -104,6 +106,7 @@ class DownloadManager: NSObject, ObservableObject {
             return existing
         }
         let download = Download(id: id, url: url, sourceProvenance: sourceProvenance)
+        download.cloneBaseOverride = cloneBaseOverride
         download.copyCount = copyCount
         download.signingCertificate = signingCertificate
         if sourceOperation { outcomes[id] = nil }
@@ -241,12 +244,18 @@ extension DownloadManager: URLSessionDownloadDelegate {
         // ZsignHandler passes the inverse flag; store installs require the embedded profile.
         options.removeProvisioning = true
         if download.copyCount > 1 {
+            // Clones use the user's manual signing preferences. Keep the
+            // existing embedded-profile override for ordinary store installs.
+            options.removeProvisioning = OptionsManager.shared.options.removeProvisioning
+            options.appIdentifier = OptionsManager.shared.options.signingBase(for: imported.identifier, certificate: certificate, manual: download.cloneBaseOverride)
             signingTasks[id] = Task { @MainActor in
-                defer { self.signingTasks.removeValue(forKey: id) }
+                defer { self.signingTasks.removeValue(forKey: id); self.signingIdentifiers.removeValue(forKey: id) }
                 do {
-                    let copies = try await CloneBatch().sign(app: imported, options: options, icon: nil,
-                                                            certificate: certificate, count: download.copyCount)
-                    self.outcomes[id] = .copiesReady(copies)
+                    let uuid = try await CloneBatch().sign(app: imported, options: options, icon: nil,
+                                                             certificate: certificate, count: download.copyCount) { target in
+                        self.signingIdentifiers[id] = target
+                    }
+                    self.outcomes[id] = .ready(uuid)
                 } catch is CancellationError { self.outcomes[id] = .cancelled }
                 catch { self.outcomes[id] = .failed(error.localizedDescription) }
             }

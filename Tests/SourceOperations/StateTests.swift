@@ -24,6 +24,30 @@ struct SourceOperationTests {
         history[original] = .signing
         for index in 0..<140 { history["other-\(index)"] = .imported }
         precondition(history[key()] == .signing && history["other-0"] == nil)
+        var outcomes = SourceOutcomes()
+        func check(_ sessions: [String], _ transfers: [String], _ expected: [String]) {
+            let rows = DownloadManagerEntry.visible(sessions: sessions, transfers: transfers, outcomes: outcomes)
+            precondition(rows.map(\.id) == expected)
+        }
+        check([], [], [])
+        check([], ["one"], ["one"])
+        check([], ["one", "two"], ["one", "two"])
+        check(["direct"], ["one", "two"], ["direct", "one", "two"])
+        // Pausing/resuming or packaging changes the transfer in place. During
+        // handoff its signing outcome may coexist with its last transfer row.
+        outcomes["one"] = .signing
+        check(["direct"], ["one", "two"], ["direct", "one", "two"])
+        check(["direct"], ["two"], ["direct", "two", "one"])
+        outcomes["two"] = .cancelled
+        check(["direct"], [], ["direct", "one"])
+        for terminal: SourceOutcome in [.ready("uuid"), .copiesReady(["1", "2"]), .submitted, .installed,
+                                       .imported, .cancelled, .failed("error")] {
+            outcomes["one"] = terminal
+            check([], [], [])
+        }
+        check(["direct"], ["direct", "two", "two"], ["direct", "two"])
+        precondition(DownloadManagerEntry.badge(0) == nil && DownloadManagerEntry.badge(1) == "1")
+        precondition(DownloadManagerEntry.badge(99) == "99" && DownloadManagerEntry.badge(100) == "99+")
         print("Source identity, reattachment, source/version isolation, retry and retained outcomes passed")
     }
 }

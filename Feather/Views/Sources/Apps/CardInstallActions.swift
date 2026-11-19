@@ -88,9 +88,8 @@ struct CardInstallActions: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button(action: details) { Text("التفاصيل").padding(.horizontal, 6).frame(minHeight: 44) }
-                .buttonStyle(.bordered)
+        HStack(spacing: 12) {
+            Button(action: details) { actionLabel("التفاصيل") }
             if let id, let session = local.sessions[id] {
                 LocalCardProgress(engine: session.engine, show: { inspect = true }, cancel: { local.close(id) })
             } else if let id, let download = manager.getDownload(by: id) {
@@ -102,8 +101,8 @@ struct CardInstallActions: View {
                 ProgressView().accessibilityLabel("جارٍ التجهيز")
             } else {
                 Button { Task { await start() } } label: {
-                    Image(systemName: "arrow.down.circle").frame(minWidth: 44, minHeight: 44)
-                }.buttonStyle(.borderedProminent).disabled(resolving).accessibilityLabel("تنزيل وتثبيت")
+                    actionLabel("تثبيت")
+                }.disabled(resolving).accessibilityLabel("تنزيل وتثبيت")
                 if let id {
                     switch manager.outcomes[id] {
                     case .failed(let error): Button { message = error } label: { Image(systemName: "exclamationmark.triangle") }
@@ -115,7 +114,7 @@ struct CardInstallActions: View {
                 }
             }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .alert("الشهادة مطلوبة", isPresented: $missing) {
             Button("إضافة شهادة") { certificates = true }
             Button("إلغاء", role: .cancel) {}
@@ -131,10 +130,15 @@ struct CardInstallActions: View {
         }
     }
 
+    private func actionLabel(_ text: String) -> some View {
+        Text(text).font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+            .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+    }
+
     @MainActor private func start() async {
         guard !resolving else { return }
         let index = UserDefaults.standard.integer(forKey: "feather.selectedCert")
-        guard let cert = Storage.shared.getCertificate(for: index), !cert.revoked,
+        guard let cert = Storage.shared.getCertificate(for: index), !cert.revoked, (cert.expiration ?? .distantPast) > Date(),
               Storage.shared.getFile(.certificate, from: cert) != nil,
               let profile = Storage.shared.getFile(.provision, from: cert),
               (try? DirectProfile.read(profile)) != nil else { missing = true; return }

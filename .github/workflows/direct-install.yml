@@ -21,11 +21,7 @@ jobs:
         with:
           submodules: recursive
       - name: Sign synthetic app and extension copies
-        run: |
-          cp -R Zsign/Upstream "$RUNNER_TEMP/native-signer"
-          cp Zsign/bundle.cpp "$RUNNER_TEMP/native-signer/src/"
-          make -C "$RUNNER_TEMP/native-signer/build/linux" -j2
-          python3 Tests/StoreActions/sign-clone-fixture.py "$RUNNER_TEMP/native-signer/bin/zsign"
+        run: bash Tests/StoreActions/build-test-signer.sh "$RUNNER_TEMP"
       - run: bash Tests/DirectInstall/test-tls.sh
       - uses: actions/checkout@v4
         with:
@@ -39,6 +35,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Check mandatory store update policy
+        run: |
+          swiftc Feather/DirectInstall/{StoreRelease,DirectPolicy}.swift Tests/StoreUpdate/PolicyTests.swift -o "$RUNNER_TEMP/store-update"
+          "$RUNNER_TEMP/store-update"
       - name: Check clone validation and catalog ordering
         run: |
           swiftc Feather/Utilities/FirstLaunchDefaults.swift Feather/Views/Signing/ClonePolicy.swift Feather/DirectInstall/Direct{Policy,Profile}.swift Feather/Views/Apps/CatalogRank.swift Feather/Backend/Observable/SourceOperation.swift Tests/StoreActions/PolicyTests.swift -o "$RUNNER_TEMP/store-actions"

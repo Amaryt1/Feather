@@ -17,6 +17,10 @@ struct SourceAppsDetailView: View {
     @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
     @AppStorage("Feather.installationMethod") private var installationMethod = 0
     @State private var copies = 1
+    @AppStorage("feather.selectedCert") private var certificateIndex = 0
+    @State private var cloneBase = ""
+
+
     @State private var showAMARYTInstall = false
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
@@ -233,20 +237,6 @@ struct SourceAppsDetailView: View {
             relatedApps = results
             isLoadingRelatedApps = false
         }
-		.toolbar {
-			NBToolbarButton(
-				systemImage: "square.and.arrow.up",
-				placement: .topBarTrailing
-			) {
-				let sharedString = """
-				\(app.currentName) - \(app.currentVersion ?? "0")
-				\(AppDescriptionSanitizer.clean(app.currentDescription ?? .localized("An awesome application")))
-				---
-				\(source.website?.absoluteString ?? source.name ?? "")
-				"""
-				UIActivityViewController.show(activityItems: [sharedString])
-			}
-		}
 		.fullScreenCover(isPresented: $_isScreenshotPreviewPresented) {
 			if let screenshotURLs = app.screenshotURLs {
 				ScreenshotPreviewView(
@@ -317,18 +307,23 @@ struct SourceAppsDetailView: View {
         }
         _ = downloadManager.startDownload(from: url, id: operationID,
             sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app),
-            signingCertificate: certificate, copyCount: certificate == nil ? 1 : copies)
+            signingCertificate: certificate, copyCount: certificate == nil ? 1 : copies,
+            cloneBaseOverride: cloneBase.isEmpty ? nil : cloneBase)
     }
 
     private func presentSigned(_ uuid: String) {
-        let request = NSFetchRequest<Signed>(entityName: "Signed")
-        request.fetchLimit = 1
-        request.predicate = NSPredicate(format: "uuid == %@", uuid)
-        if let signed = try? Storage.shared.context.fetch(request).first {
+        if let signed = signedCopy(uuid) {
             directInstallPreview = AnyApp(base: signed)
         } else {
             downloadManager.outcomes[operationID] = .failed("تعذر العثور على الحزمة الموقعة.")
         }
+    }
+
+    private func signedCopy(_ uuid: String) -> Signed? {
+        let request = NSFetchRequest<Signed>(entityName: "Signed")
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(format: "uuid == %@", uuid)
+        return try? Storage.shared.context.fetch(request).first
     }
 
     private var storeActions: some View {
@@ -337,8 +332,16 @@ struct SourceAppsDetailView: View {
         let session = localInstalls.sessions[operationID]
         let busy = download != nil || outcome == .signing
         return VStack(alignment: .leading, spacing: 6) {
-            Stepper("تكرار التطبيق · عدد النسخ: \(copies)", value: $copies, in: 1...ClonePolicy.limit)
+            Stepper(copies == 1 ? "تثبيت التطبيق الأصلي" : "تكرار التطبيق · النسخة الإضافية \(copies - 1)", value: $copies, in: 1...ClonePolicy.limit)
                 .disabled(busy || session != nil)
+            if copies > 1 && !busy && session == nil {
+                TextField("تلقائي من ملف IPA، أو أدخل معرّفًا أساسيًا", text: $cloneBase)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("معرّف الحزمة الأساسي")
+                Text("بعد الاستيراد يُحجز أول معرّف متاح بدءًا من اللاحقة .\(copies - 1). تُوقّع نسخة إضافية واحدة.")
+                    .font(.caption)
+                Button("اختيار شهادة وملف تزويد") { showCertificates = true }
+            }
             HStack(spacing: 10) {
                 Button {
                     if session != nil || (copies == 1 && installationMethod == DirectPolicy.method) {
@@ -366,14 +369,25 @@ struct SourceAppsDetailView: View {
                 switch outcome {
                 case .copiesReady(let uuids):
                     ForEach(Array(uuids.enumerated()), id: \.element) { index, uuid in
-                        Button("تثبيت النسخة \(index + 1)") { presentSigned(uuid) }
+                        Button { presentSigned(uuid) } label: {
+                            VStack(alignment: .leading) {
+                                Text("تثبيت النسخة \(index + 1)")
+                                if let id = signedCopy(uuid)?.identifier { Text(verbatim: id).font(.caption.monospaced()) }
+                            }
+                        }
                             .buttonStyle(.bordered)
                     }
                 case .imported: Label("تمت الإضافة إلى المكتبة", systemImage: "checkmark")
                 case .signing:
                     ProgressView("جارٍ التوقيع")
+                    if let target = downloadManager.signingIdentifiers[operationID] {
+                        Text(verbatim: target).font(.caption.monospaced())
+                    }
                     Button("إلغاء التوقيع") { downloadManager.cancelSigning(operationID) }
-                case .ready: Label("جاهز للتثبيت", systemImage: "checkmark.seal")
+                case .ready(let uuid):
+                    Button { presentSigned(uuid) } label: {
+                        Label(signedCopy(uuid)?.identifier ?? "جاهز للتثبيت", systemImage: "checkmark.seal")
+                    }
                 case let .failed(message): Text(message).foregroundStyle(.red)
                 case .installed: Text("اكتمل التثبيت")
                 case .submitted: Text("تم إرسال طلب التثبيت إلى iOS")

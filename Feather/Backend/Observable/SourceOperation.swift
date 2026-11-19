@@ -49,6 +49,10 @@ enum SourceOutcome: Equatable {
 struct SourceOutcomes {
     private var values: [String: SourceOutcome] = [:]
     private var recent: [String] = []
+    var signingIDs: [String] {
+        values.compactMap { $0.value == .signing ? $0.key : nil }.sorted()
+    }
+
     subscript(_ key: String) -> SourceOutcome? {
         get { values[key] }
         set {
@@ -59,5 +63,29 @@ struct SourceOutcomes {
                 if recent.count > 100 { values.removeValue(forKey: recent.removeFirst()) }
             }
         }
+    }
+}
+
+/// Ordered membership shared by the downloads list and its toolbar label.
+struct DownloadManagerEntry: Identifiable {
+    enum Kind { case session, transfer, signing }
+    let id: String
+    let kind: Kind
+
+    static func visible(sessions: [String], transfers: [String], outcomes: SourceOutcomes) -> [Self] {
+        var seen = Set<String>()
+        var rows: [Self] = []
+        func append(_ ids: [String], kind: Kind) {
+            for id in ids where seen.insert(id).inserted { rows.append(Self(id: id, kind: kind)) }
+        }
+        append(sessions.sorted(), kind: .session)
+        append(transfers, kind: .transfer)
+        append(outcomes.signingIDs, kind: .signing)
+        return rows
+    }
+
+    static func badge(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return count > 99 ? "99+" : String(count)
     }
 }

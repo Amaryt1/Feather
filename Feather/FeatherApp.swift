@@ -13,7 +13,8 @@ import OSLog
 @main
 struct FeatherApp: App {
 	@UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var showWelcome = true
+    @Environment(\.scenePhase) private var phase
+    @StateObject private var updateGate = StoreUpdateGate()
 	
 	@State private var pendingLinks: [URL] = []
 	
@@ -22,32 +23,46 @@ struct FeatherApp: App {
 	
 	var body: some Scene {
 		WindowGroup {
+            #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-AMARYTCatalogPreview") {
                 AMARYTCatalogPreviewView()
+            } else { gatedContent }
+            #else
+            gatedContent
+            #endif
+        }
+    }
+
+    private var gatedContent: some View {
+        Group {
+            if case .failed(let message) = storage.state {
+                VStack(spacing: 16) {
+                    Text(message).multilineTextAlignment(.center)
+                    Button("إعادة المحاولة") { storage.load() }
+                }.padding()
             } else {
-                Group {
-                    switch storage.state {
-                    case .waiting, .loading:
-                        ProgressView("جارٍ فتح المكتبة…").task { storage.load() }
-                    case .failed(let message):
-                        VStack(spacing: 16) {
-                            Text(message).multilineTextAlignment(.center)
-                            Button("إعادة المحاولة") { storage.load() }
-                        }.padding()
-                    case .ready:
-                        storeContent
-                    }
-                }
-                .onOpenURL { url in
-                    if storage.state == .ready { _handleURL(url) } else { pendingLinks.append(url) }
+                switch StoreLaunchScreen(libraryReady: storage.state == .ready, checked: updateGate.checked, required: updateGate.required) {
+                case .mandatory(let release):
+                    StoreUpdateScreen(release: release, gate: updateGate)
+                        .id(release).environment(\.managedObjectContext, storage.context)
+                        .modifier(StoreThemeHost())
+                case .store:
+                    storeContent
+                case .welcome:
+                    AMARYTWelcomeView().task { if storage.state == .waiting { storage.load() } }
                 }
             }
+        }
+        .task(id: phase) { if phase == .active { await updateGate.refresh() } }
+        .onOpenURL { url in
+            guard updateGate.required == nil else { return }
+            guard updateGate.checked else { pendingLinks.append(url); return }
+            if storage.state == .ready { _handleURL(url) } else { pendingLinks.append(url) }
         }
     }
 
     private var storeContent: some View {
-            ZStack {
-			VStack(spacing: 0) {
+            VStack(spacing: 0) {
 				if !downloadManager.manualDownloads.isEmpty {
 				DownloadHeaderView(downloadManager: downloadManager)
 					.transition(.move(edge: .top).combined(with: .opacity))
@@ -65,10 +80,6 @@ struct FeatherApp: App {
 					)
 				}
 			}
-                if showWelcome {
-                    AMARYTWelcomeView().transition(.opacity).zIndex(1)
-                }
-            }
             .modifier(CardInstallHost())
             .modifier(StoreThemeHost())
             .task {
@@ -77,8 +88,6 @@ struct FeatherApp: App {
                 let links = pendingLinks
                 pendingLinks.removeAll()
                 links.forEach(_handleURL)
-                try? await Task.sleep(for: .seconds(2.5))
-                withAnimation(.easeOut(duration: 0.45)) { showWelcome = false }
             }
     }
 

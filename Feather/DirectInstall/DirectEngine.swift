@@ -1,8 +1,12 @@
 import SwiftUI
+import Combine
+import IDeviceSwift
 private struct StagedApp: AppInfoPresentable {
     let identifier: String?
-    var name: String? { nil }
-    var version: String? { nil }
+    var nameOverride: String? = nil
+    var versionOverride: String? = nil
+    var name: String? { nameOverride }
+    var version: String? { versionOverride }
     var date: Date? { nil }
     var icon: String? { nil }
     var uuid: String? { nil }
@@ -30,6 +34,9 @@ final class DirectEngine: ObservableObject {
     private var archive: URL?
     private var metadata: DirectMetadata?
     private var listener: DirectLocalServer?
+    private var updateServer: ServerInstaller?
+    private var updateTransfer: AnyCancellable?
+    var storeUpdatePage: URL? { updateServer?.pageEndpoint }
     @Published var preparedTitle: String?
     @Published var preparedVersion: String?
     @Published var preparedIcon: UIImage?
@@ -56,9 +63,15 @@ final class DirectEngine: ObservableObject {
         prepare(input)
     }
 
-    func prepare(_ input: DirectInput) {
+    func prepare(_ input: DirectInput) { begin(input, update: nil) }
+
+    func prepareStoreUpdate(_ release: StoreRelease) {
+        begin(.source(release.url, "AMARYT STORE", release.version, nil), update: release)
+    }
+
+    private func begin(_ input: DirectInput, update: StoreRelease?) {
         guard work == nil else { return }
-        if needsTrust, archive != nil, metadata != nil {
+        if update == nil, needsTrust, archive != nil, metadata != nil {
             phase = .preparing
             work = Task {
                 defer { work = nil }
@@ -78,19 +91,24 @@ final class DirectEngine: ObservableObject {
             defer { work = nil }
             do {
                 _ = Self.clearPreviousProcessFiles
-                guard DirectPreferences.enabled else { throw DirectError("المحرك متوقف في الإعدادات.") }
+                guard update != nil || DirectPreferences.enabled else { throw DirectError("المحرك متوقف في الإعدادات.") }
                 let path = FileManager.default.temporaryDirectory.appendingPathComponent("AMARYTDirect-" + UUID().uuidString)
                 try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
                 folder = path
                 switch input {
                 case let .source(url, _, _, _):
-                    let cert = try certificate()
+                    let cert: CertificatePair
+                    if let update {
+                        try update.validate()
+                        cert = try StoreUpdateSigning.certificate()
+                    } else { cert = try certificate() }
                     let ipa = path.appendingPathComponent("source.ipa")
                     phase = .downloading
-                    try await download(try DirectPolicy.https(url), to: ipa)
+                    try await download(try DirectPolicy.https(url), to: ipa, retries: update == nil ? DirectPreferences.retries : 1)
                     try Task.checkCancellation()
+                    if let update { try await StoreUpdateSigning.verifyFile(ipa, release: update) }
                     phase = .signing
-                    try await signAndPack(ipa, cert: cert, folder: path)
+                    try await signAndPack(ipa, cert: cert, folder: path, update: update)
                 case let .signed(app):
                     guard app.isSigned, let directory = Storage.shared.getAppDirectory(for: app) else { throw DirectError("اختر تطبيقًا موقّعًا من المكتبة.") }
                     try DirectDisk.require(try await DirectDisk.size(of: directory), at: path)
@@ -101,12 +119,39 @@ final class DirectEngine: ObservableObject {
                     try await pack(copy, folder: path)
                 }
                 try Task.checkCancellation()
-                try await checkListener()
+                if update != nil { try prepareStoreUpdateServer() }
+                else { try await checkListener() }
             } catch {
                 fail(error)
                 if !needsTrust || Task.isCancelled { clean() }
             }
         }
+    }
+
+    // Store self-updates deliberately use the same ServerInstaller as ordinary installations.
+    // Do not alter the user's persisted installation settings or the other install engines.
+    private func prepareStoreUpdateServer() throws {
+        guard let archive, let metadata else { throw DirectError("تعذّر تجهيز تحديث المتجر.") }
+        guard archive.isFileURL, FileManager.default.fileExists(atPath: archive.path) else {
+            throw DirectError("ملف التحديث الموقّع غير موجود.")
+        }
+        let status = InstallerStatusViewModel(isIdevice: false)
+        let app = StagedApp(identifier: metadata.bundle, nameOverride: metadata.title, versionOverride: metadata.version)
+        let server = try ServerInstaller(app: app, viewModel: status, updateLoopback: true)
+        server.packageUrl = archive
+        updateTransfer = status.$status.receive(on: DispatchQueue.main).sink { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .sendingPayload: self.phase = .sent
+            case .installing: self.servedPackage = true; self.endBackground()
+            case .broken(let error):
+                self.fail(DirectError("انقطع نقل ملف التحديث. " + String(describing: error)))
+                self.endBackground()
+            default: break
+            }
+        }
+        updateServer = server
+        phase = .ready
     }
 
     private func checkListener() async throws {
@@ -140,8 +185,7 @@ final class DirectEngine: ObservableObject {
         return cert
     }
 
-    private func download(_ url: URL, to file: URL) async throws {
-        let retries = DirectPreferences.retries
+    private func download(_ url: URL, to file: URL, retries: Int) async throws {
         var resume: Data?
         let directory = file.deletingLastPathComponent()
         for attempt in 0...retries {
@@ -186,7 +230,7 @@ final class DirectEngine: ObservableObject {
         }
     }
 
-    private func signAndPack(_ ipa: URL, cert: CertificatePair, folder: URL) async throws {
+    private func signAndPack(_ ipa: URL, cert: CertificatePair, folder: URL, update: StoreRelease?) async throws {
         let directory = try await Self.unpack(ipa, folder: folder)
         try FileManager.default.removeItem(at: ipa)
         try Task.checkCancellation()
@@ -194,7 +238,11 @@ final class DirectEngine: ObservableObject {
               NSDictionary(contentsOf: directory.appendingPathComponent("Info.plist")) != nil else {
             throw DirectError("ملف معلومات التطبيق غير صالح.")
         }
-        var options = OptionsManager.shared.options
+        if let update {
+            let info = NSDictionary(contentsOf: directory.appendingPathComponent("Info.plist")) as? [String: Any] ?? [:]
+            try update.verifyPackage(info)
+        }
+        var options = update == nil ? OptionsManager.shared.options : Options.defaultOptions
         options.signingOption = .default
         options.appIdentifier = nil
         // ZsignHandler passes the inverse of this flag to Zsign.removeProvision.
@@ -203,7 +251,8 @@ final class DirectEngine: ObservableObject {
         let signer = SigningHandler(app: StagedApp(identifier: id), options: options)
         signer.appCertificate = cert
         do {
-            try await signer.signStagedBundle(at: directory)
+            if update != nil { try await signer.signStoreUpdate(at: directory, expectedID: id) }
+            else { try await signer.signStagedBundle(at: directory) }
             try await signer.clean()
         } catch {
             try? await signer.clean()
@@ -211,7 +260,7 @@ final class DirectEngine: ObservableObject {
             throw error
         }
         try Task.checkCancellation()
-        try await pack(directory, folder: folder)
+        try await pack(directory, folder: folder, update: update)
     }
 
     private nonisolated static func unpack(_ ipa: URL, folder: URL) async throws -> URL {
@@ -222,11 +271,15 @@ final class DirectEngine: ObservableObject {
         try FileManager.default.copyItem(at: source, to: destination)
     }
 
-    private func pack(_ dir: URL, folder: URL) async throws {
+    private func pack(_ dir: URL, folder: URL, update: StoreRelease? = nil) async throws {
         phase = .preparing
         guard let info = NSDictionary(contentsOf: dir.appendingPathComponent("Info.plist")) as? [String: Any],
-              let id = info["CFBundleIdentifier"] as? String, id != Bundle.main.bundleIdentifier,
+              let id = info["CFBundleIdentifier"] as? String, (update != nil || id != Bundle.main.bundleIdentifier),
               let version = info["CFBundleVersion"] as? String else { throw DirectError("تحقّق من توقيع الحزمة وملف التزويد. لا يمكن تحديث المتجر من نفسه.") }
+        if let update {
+            try update.verifyPackage(info)
+            try StoreUpdateSigning.verifyContinuity(of: dir)
+        }
         let profile = try DirectProfile.read(dir.appendingPathComponent("embedded.mobileprovision"))
         guard profile.permits(id) else {
             needsCertificate = true
@@ -246,8 +299,25 @@ final class DirectEngine: ObservableObject {
         self.metadata = metadata
     }
 
+    func beginStoreHandoff() {
+        guard updateServer != nil, phase == .ready || phase == .sent else { return }
+        phase = .submitting
+        if background == .invalid {
+            background = UIApplication.shared.beginBackgroundTask(withName: "AMARYT Store Update") { [weak self] in
+                Task { @MainActor in self?.endBackground() }
+            }
+        }
+    }
+
+    func storePageDismissed() {
+        guard updateServer != nil, phase == .submitting else { return }
+        phase = .ready
+        endBackground()
+    }
+
     func submit() {
-        guard (phase == .ready || phase == .sent), work == nil, let listener else { return }
+        guard phase == .ready, work == nil else { return }
+        guard let listener else { return }
         phase = .submitting
         work = Task {
             defer { work = nil }
@@ -281,6 +351,8 @@ final class DirectEngine: ObservableObject {
     private func clean() {
         endBackground()
         listener = nil
+        updateServer = nil
+        updateTransfer = nil
         if let folder { try? FileManager.default.removeItem(at: folder) }
         folder = nil; archive = nil; metadata = nil
     }
