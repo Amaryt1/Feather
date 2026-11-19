@@ -39,15 +39,14 @@ final class CloneBatch: ObservableObject {
         guard let base = options.appIdentifier ?? app.identifier, let certificate, !certificate.revoked,
               options.signingOption == .default,
               (certificate.expiration ?? .distantPast) > Date(),
-              Storage.shared.getFile(.certificate, from: certificate) != nil,
-              Storage.shared.getFile(.provision, from: certificate) != nil else {
-            throw DirectError("تكرار التطبيق يتطلب شهادة وملف تزويد صالحين.")
+              let key = Storage.shared.getFile(.certificate, from: certificate),
+              let url = Storage.shared.getFile(.provision, from: certificate) else {
+            throw DirectError("تكرار التطبيق يتطلب شهادة صالحة وتوقيعًا بملف تزويد.")
         }
-        // Same identifier edit as manual signing, except we generate the suffix.
-        // Avoid the stricter ClonePolicy/profile preflight, which blocked the
-        // user's manual-valid IDs before the shared signer was even invoked.
-        // The signing engine and iOS remain responsible for accepting the IPA.
-        let plan = try Self.plan(base: base, original: app.identifier, count: count)
+        let profile = try DirectProfile.read(url)
+        try Self.validateIdentity(key, password: certificate.password ?? "", profile: url)
+        let plan = try Self.plan(base: base, original: app.identifier, count: count, profile: profile)
+        try ClonePolicy.validate(plan, profile: profile)
         if let expected, plan != expected {
             throw DirectError("تغيرت معرّفات النسخ المتاحة. راجع المعاينة ثم أعد المحاولة.")
         }
@@ -55,21 +54,30 @@ final class CloneBatch: ObservableObject {
         held = Set(plan)
         Self.reserved.formUnion(held)
         NotificationCenter.default.post(name: Self.reservationsChanged, object: nil)
-        for id in plan {
+        for (offset, id) in plan.enumerated() {
             try Task.checkCancellation()
             stage = "توقيع النسخة الإضافية · \(id)"
             var copy = options
             copy.appIdentifier = id
-            // Do not override removeProvisioning or entitlements: manual
-            // signing must use the same caller-supplied options as this route.
-            let uuid = try await FR.signPackageFileAsync(app, using: copy, icon: icon, certificate: certificate)
-            results.append("✓ " + id)
-            uuids.append(uuid)
+            copy.removeProvisioning = true
+            let signer = SigningHandler(app: app, options: copy)
+            signer.appIcon = icon
+            signer.appCertificate = certificate
+            do {
+                try await signer.copy()
+                try await signer.signClone(expectedID: id)
+                try? await signer.clean()
+                results.append("✓ " + id)
+                uuids.append(signer.signedUUID)
+            } catch {
+                try? await signer.clean()
+                throw error
+            }
         }
         return uuids
     }
 
-    static func plan(base: String, original: String?, count: Int) throws -> [String] {
+    static func plan(base: String, original: String?, count: Int, profile: DirectProfile) throws -> [String] {
         var occupied = Self.reserved
         for entity in ["Imported", "Signed"] {
             let request = NSFetchRequest<NSDictionary>(entityName: entity)
@@ -80,11 +88,14 @@ final class CloneBatch: ObservableObject {
             }
         }
         if let store = Bundle.main.bundleIdentifier { occupied.insert(store) }
-        guard base.caseInsensitiveCompare(Bundle.main.bundleIdentifier ?? "") != .orderedSame else {
-            throw DirectError("لا يمكن استخدام معرّف المتجر كأساس للنسخ.")
+        let existing = occupied.contains { $0.caseInsensitiveCompare(base) == .orderedSame }
+        guard base.caseInsensitiveCompare(Bundle.main.bundleIdentifier ?? "") != .orderedSame,
+              !reserved.contains(where: { $0.caseInsensitiveCompare(base) == .orderedSame }),
+              !existing || base == original else {
+            throw DirectError("المعرّف الأساسي مستخدم بالفعل. اختر معرّفًا آخر.")
         }
         guard count > 1 else { throw DirectError("النسخة الأصلية تُوقّع من المسار المعتاد.") }
-        let target = try ClonePolicy.selectedCloneIdentifier(base: base, selection: count, occupied: occupied)
+        let target = try ClonePolicy.selectedCloneIdentifier(base: base, original: original, selection: count, occupied: occupied, profile: profile)
         return [target]
     }
 
@@ -110,7 +121,6 @@ struct ClonePlanView: View {
     @Binding var approved: [String]
     @State private var identifiers: [String] = []
     @State private var issue: String?
-    @State private var warning: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -119,7 +129,13 @@ struct ClonePlanView: View {
                 Text(verbatim: id).font(.caption.monospaced()).textSelection(.enabled)
             }
             if let issue { Text(issue).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-            if let warning { Text(warning).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+            if let certificate,
+               let url = Storage.shared.getFile(.provision, from: certificate),
+               let profile = try? DirectProfile.read(url),
+               !profile.Entitlements.applicationIdentifier.hasSuffix("*"), issue == nil {
+                Text("ملف التزويد هذا يسمح بمعرّف واحد فقط. يمكن استخدامه لنسخة إضافية واحدة إذا لم يكن المعرّف مستخدمًا.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .task(id: [base, original ?? "", String(count), certificate?.objectID.uriRepresentation().absoluteString ?? ""]) {
             refresh()
@@ -131,21 +147,16 @@ struct ClonePlanView: View {
     @MainActor private func refresh() {
         approved = []
         identifiers = []
-        warning = nil
         do {
             guard let certificate, !certificate.revoked, (certificate.expiration ?? .distantPast) > Date(),
-                  Storage.shared.getFile(.certificate, from: certificate) != nil,
                   let url = Storage.shared.getFile(.provision, from: certificate) else {
                 throw DirectError("اختر شهادة صالحة وملف تزويد للنسخ.")
             }
-            identifiers = try CloneBatch.plan(base: base, original: original, count: count)
+            let profile = try DirectProfile.read(url)
+            identifiers = try CloneBatch.plan(base: base, original: original, count: count, profile: profile)
+            try ClonePolicy.validate(identifiers, profile: profile)
             approved = identifiers
             issue = nil
-            if let identifier = identifiers.first,
-               let profile = try? DirectProfile.read(url),
-               !profile.permits(identifier) {
-                warning = "تنبيه: المعرف التلقائي خارج نطاق ملف التزويد. سيُستخدم مسار التوقيع اليدوي نفسه، لكن قد يرفض iOS تثبيت النسخة."
-            }
         } catch { issue = error.localizedDescription }
     }
 }
