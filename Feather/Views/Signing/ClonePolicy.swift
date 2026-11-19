@@ -61,6 +61,66 @@ enum ClonePolicy {
         return candidate
     }
 
+    /// Choose the ID for a *single* additional app using the selected provisioning profile.
+    /// A fixed-ID profile can authorize only its one explicit ID; a wildcard can
+    /// authorize additional unique IDs inside its allowed namespace.
+    static func selectedCloneIdentifier(
+        base: String,
+        original: String?,
+        selection: Int,
+        occupied: Set<String>,
+        profile: DirectProfile
+    ) throws -> String {
+        guard (2...limit).contains(selection) else {
+            throw DirectError("رقم النسخة الإضافية غير صالح.")
+        }
+        let identity = profile.Entitlements.applicationIdentifier
+        guard let dot = identity.firstIndex(of: ".") else {
+            throw DirectError("معرّف ملف التزويد غير صالح.")
+        }
+        let authorized = String(identity[identity.index(after: dot)...])
+        let used = Set(occupied.map { $0.lowercased() })
+
+        // A non-wildcard profile cannot mint .1, .2, etc. Select its exact
+        // permitted bundle ID only if it represents a distinct, unused app.
+        if !authorized.hasSuffix("*") {
+            guard selection == 2, validIdentifier(authorized),
+                  original?.caseInsensitiveCompare(authorized) != .orderedSame,
+                  !used.contains(authorized.lowercased()) else {
+                throw DirectError("ملف التزويد يسمح بمعرّف واحد فقط وهو " + authorized
+                    + ". لتثبيت نسخ إضافية أخرى اختر ملف تزويد wildcard أو شهادة بملف مختلف.")
+            }
+            return authorized
+        }
+
+        // Preserve the established .1 / .2 selection for an already-compatible
+        // app identifier, including explicit edits made by the user.
+        let regular = try selectedCloneIdentifier(base: base, selection: selection, occupied: occupied)
+        if profile.permits(regular) { return regular }
+
+        // The source app's ID is outside this profile (common with imported
+        // third-party apps). Rebase only the clone under the permitted wildcard;
+        // the original app remains untouched.
+        let scope = String(authorized.dropLast())
+        let uniqueStem = base.replacingOccurrences(of: ".", with: "-")
+        let compatibleBase = scope + uniqueStem
+        let candidate = try selectedCloneIdentifier(base: compatibleBase, selection: selection, occupied: occupied)
+        guard profile.permits(candidate) else {
+            throw DirectError("تعذّر إنشاء معرّف نسخة ضمن نطاق ملف التزويد.")
+        }
+        return candidate
+    }
+
+    private static func validIdentifier(_ value: String) -> Bool {
+        !value.isEmpty &&
+        value.split(separator: ".", omittingEmptySubsequences: false).allSatisfy {
+            !$0.isEmpty && $0.utf8.allSatisfy {
+                (65...90).contains($0) || (97...122).contains($0) ||
+                (48...57).contains($0) || $0 == 45
+            }
+        }
+    }
+
     static func claims(_ original: [String: Any], id: String, profile: DirectProfile, grants: [String: Any]) throws -> [String: Any] {
         guard profile.permits(id), let prefix = profile.Entitlements.applicationIdentifier.split(separator: ".").first else {
             throw DirectError("ملف التزويد لا يغطي " + id)
