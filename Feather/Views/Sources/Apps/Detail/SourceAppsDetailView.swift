@@ -17,6 +17,14 @@ struct SourceAppsDetailView: View {
     @FetchRequest(entity: CertificatePair.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]) private var availableCertificates: FetchedResults<CertificatePair>
     @AppStorage("Feather.installationMethod") private var installationMethod = 0
     @State private var copies = 1
+    @AppStorage("feather.selectedCert") private var certificateIndex = 0
+    @State private var reviewedIDs: [String] = []
+    @State private var cloneBase = ""
+
+    private var defaultCloneBase: String {
+        guard let id = app.id else { return "" }
+        return OptionsManager.shared.options.identifiers[id] ?? id
+    }
     @State private var showAMARYTInstall = false
     @State private var showCertificateAlert = false
     @State private var showCertificates = false
@@ -233,20 +241,6 @@ struct SourceAppsDetailView: View {
             relatedApps = results
             isLoadingRelatedApps = false
         }
-		.toolbar {
-			NBToolbarButton(
-				systemImage: "square.and.arrow.up",
-				placement: .topBarTrailing
-			) {
-				let sharedString = """
-				\(app.currentName) - \(app.currentVersion ?? "0")
-				\(AppDescriptionSanitizer.clean(app.currentDescription ?? .localized("An awesome application")))
-				---
-				\(source.website?.absoluteString ?? source.name ?? "")
-				"""
-				UIActivityViewController.show(activityItems: [sharedString])
-			}
-		}
 		.fullScreenCover(isPresented: $_isScreenshotPreviewPresented) {
 			if let screenshotURLs = app.screenshotURLs {
 				ScreenshotPreviewView(
@@ -317,18 +311,23 @@ struct SourceAppsDetailView: View {
         }
         _ = downloadManager.startDownload(from: url, id: operationID,
             sourceProvenance: SourceAppProvenance(sourceURL: sourceURL, repository: source, app: app),
-            signingCertificate: certificate, copyCount: certificate == nil ? 1 : copies)
+            signingCertificate: certificate, copyCount: certificate == nil ? 1 : copies,
+            reviewedCloneIDs: copies > 1 ? reviewedIDs : nil, cloneBaseOverride: cloneBase.isEmpty ? nil : cloneBase)
     }
 
     private func presentSigned(_ uuid: String) {
-        let request = NSFetchRequest<Signed>(entityName: "Signed")
-        request.fetchLimit = 1
-        request.predicate = NSPredicate(format: "uuid == %@", uuid)
-        if let signed = try? Storage.shared.context.fetch(request).first {
+        if let signed = signedCopy(uuid) {
             directInstallPreview = AnyApp(base: signed)
         } else {
             downloadManager.outcomes[operationID] = .failed("تعذر العثور على الحزمة الموقعة.")
         }
+    }
+
+    private func signedCopy(_ uuid: String) -> Signed? {
+        let request = NSFetchRequest<Signed>(entityName: "Signed")
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(format: "uuid == %@", uuid)
+        return try? Storage.shared.context.fetch(request).first
     }
 
     private var storeActions: some View {
@@ -339,6 +338,15 @@ struct SourceAppsDetailView: View {
         return VStack(alignment: .leading, spacing: 6) {
             Stepper("تكرار التطبيق · عدد النسخ: \(copies)", value: $copies, in: 1...ClonePolicy.limit)
                 .disabled(busy || session != nil)
+            if copies > 1 && !busy && session == nil {
+                TextField(defaultCloneBase.isEmpty ? "معرّف الحزمة الأساسي" : defaultCloneBase, text: $cloneBase)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("معرّف الحزمة الأساسي")
+                ClonePlanView(base: cloneBase.isEmpty ? defaultCloneBase : cloneBase, original: app.id, count: copies,
+                              certificate: availableCertificates.indices.contains(certificateIndex) ? availableCertificates[certificateIndex] : nil,
+                              approved: $reviewedIDs)
+                Button("اختيار شهادة وملف تزويد") { showCertificates = true }
+            }
             HStack(spacing: 10) {
                 Button {
                     if session != nil || (copies == 1 && installationMethod == DirectPolicy.method) {
@@ -353,7 +361,7 @@ struct SourceAppsDetailView: View {
                     }
                 } label: {
                     Text(session != nil ? "متابعة التثبيت" : "تثبيت")
-                }.disabled(busy).buttonStyle(StoreActionStyle())
+                }.disabled(busy || (session == nil && copies > 1 && reviewedIDs.count != copies)).buttonStyle(StoreActionStyle())
                 Button("استيراد إلى المكتبة") { start() }
                     .disabled(busy || session != nil).buttonStyle(.bordered)
             }
@@ -366,7 +374,12 @@ struct SourceAppsDetailView: View {
                 switch outcome {
                 case .copiesReady(let uuids):
                     ForEach(Array(uuids.enumerated()), id: \.element) { index, uuid in
-                        Button("تثبيت النسخة \(index + 1)") { presentSigned(uuid) }
+                        Button { presentSigned(uuid) } label: {
+                            VStack(alignment: .leading) {
+                                Text("تثبيت النسخة \(index + 1)")
+                                if let id = signedCopy(uuid)?.identifier { Text(verbatim: id).font(.caption.monospaced()) }
+                            }
+                        }
                             .buttonStyle(.bordered)
                     }
                 case .imported: Label("تمت الإضافة إلى المكتبة", systemImage: "checkmark")

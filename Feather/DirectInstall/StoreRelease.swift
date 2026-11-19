@@ -49,3 +49,13 @@ struct StoreRelease: Codable, Hashable {
         }
     }
 }
+
+enum StoreLaunchScreen: Equatable {
+    case welcome, mandatory(StoreRelease), store
+
+    init(libraryReady: Bool, checked: Bool, required: StoreRelease?) {
+        guard libraryReady else { self = .welcome; return }
+        if let required { self = .mandatory(required) }
+        else { self = checked ? .store : .welcome }
+    }
+}

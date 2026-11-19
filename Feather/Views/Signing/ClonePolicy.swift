@@ -4,20 +4,41 @@ import CoreFoundation
 enum ClonePolicy {
     static let limit = 10
     static func identifiers(base: String, count: Int, occupied: Set<String>, profile: DirectProfile) throws -> [String] {
+        let ids = try identifiers(base: base, count: count, occupied: occupied)
+        try validate(ids, profile: profile)
+        return ids
+    }
+
+    static func validate(_ ids: [String], profile: DirectProfile) throws {
+        let pattern = profile.Entitlements.applicationIdentifier
+        if ids.count > 1 && !pattern.hasSuffix("*") {
+            throw DirectError("ملف التزويد الحالي مخصّص لمعرّف واحد (" + pattern + "). لا يمكنه توقيع نسختين بمعرّفين مختلفين. اختر ملف تزويد wildcard يغطي معرّفات النسخ وامتداداتها، أو استخدم نسخة واحدة بمعرّف مصرح به.")
+        }
+        if let denied = ids.first(where: { !profile.permits($0) }) {
+            throw DirectError("معرّف النسخة " + denied + " خارج نطاق " + pattern + ". عدّل المعرّف الأساسي أو اختر ملف تزويد متوافقًا.")
+        }
+    }
+
+    static func rebased(_ value: String, from old: String, to new: String) -> String {
+        guard value == old || value.hasPrefix(old + ".") else { return value }
+        return new + String(value.dropFirst(old.count))
+    }
+
+    static func identifiers(base: String, count: Int, occupied: Set<String>) throws -> [String] {
         guard (1...limit).contains(count), !base.isEmpty,
               base.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({
                   !$0.isEmpty && $0.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
               }) else { throw DirectError("عدد النسخ أو معرّف التطبيق غير صالح.") }
         var suffix = 0
-        return try (1...count).map { index in
+        let used = Set(occupied.map { $0.lowercased() })
+        return (1...count).map { index in
             var id = base
             if index > 1 {
                 repeat {
                     suffix += 1
                     id = "\(base).\(suffix)"
-                } while occupied.contains(id)
+                } while used.contains(id.lowercased())
             }
-            guard profile.permits(id) else { throw DirectError("ملف التزويد يسمح بـ " + profile.Entitlements.applicationIdentifier + " ولا يغطي " + id + ". اختر شهادة بملف تزويد يغطي جميع معرّفات النسخ، أو وقّع نسخة واحدة بمعرّف مصرح به.") }
             return id
         }
     }

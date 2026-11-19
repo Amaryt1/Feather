@@ -16,6 +16,13 @@ import Foundation
             let required = try policy.required(over: installed, build: build)
             precondition(required == expected)
         }
+        for checked in [false, true] {
+            let required = release("3")
+            precondition(StoreLaunchScreen(libraryReady: false, checked: checked, required: required) == .welcome)
+            precondition(StoreLaunchScreen(libraryReady: false, checked: checked, required: nil) == .welcome)
+            precondition(StoreLaunchScreen(libraryReady: true, checked: checked, required: required) == .mandatory(required))
+            precondition(StoreLaunchScreen(libraryReady: true, checked: checked, required: nil) == (checked ? .store : .welcome))
+        }
         precondition((try? StoreRelease.parts("1..2")) == nil)
         do {
             try release("3", "", true, "https://example.com/store.ipa").validate()

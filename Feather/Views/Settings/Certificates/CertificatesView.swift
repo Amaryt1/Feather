@@ -62,14 +62,12 @@ struct CertificatesView: View {
 			}
 		}
 		.toolbar {
-			if _bindingSelectedCert == nil {
-				NBToolbarButton(
-					systemImage: "plus",
-					style: .icon,
-					placement: .topBarTrailing
-				) {
-					_isAddingPresenting = true
-				}
+			NBToolbarButton(
+				systemImage: "plus",
+				style: .icon,
+				placement: .topBarTrailing
+			) {
+				_isAddingPresenting = true
 			}
 		}
 		.sheet(item: $_isSelectedInfoPresenting) { cert in

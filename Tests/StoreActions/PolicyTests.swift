@@ -33,6 +33,12 @@ struct StoreActionTests {
         for (count, occupied, profile) in [(2, Set<String>(), exact), (0, [], wildcard), (11, [], wildcard)] {
             precondition((try? ClonePolicy.identifiers(base: base, count: count, occupied: occupied, profile: profile)) == nil)
         }
+        let edited = "com.example.manual"
+        let reviewed = try ClonePolicy.identifiers(base: edited, count: 3, occupied: ["COM.EXAMPLE.MANUAL.1"], profile: wildcard)
+        precondition(reviewed == [edited, edited + ".2", edited + ".3"])
+        precondition(ClonePolicy.rebased(base + ".widget", from: base, to: edited) == edited + ".widget")
+        precondition(ClonePolicy.rebased(base + "le.widget", from: base, to: edited) == base + "le.widget")
+        precondition((try? ClonePolicy.identifiers(base: edited, count: 2, occupied: [], profile: exact)) == nil)
         let grants: [String: Any] = ["application-identifier": "TEAM.com.example.*", "keychain-access-groups": ["TEAM.*"]]
         let source = ["application-identifier": "OLD.com.example.app", "keychain-access-groups": ["OLD.com.example.app"]] as [String: Any]
         let claims = try ClonePolicy.claims(source, id: base + ".1", profile: wildcard, grants: grants)

@@ -15,7 +15,6 @@ struct FeatherApp: App {
 	@UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var phase
     @StateObject private var updateGate = StoreUpdateGate()
-    @State private var showWelcome = true
 	
 	@State private var pendingLinks: [URL] = []
 	
@@ -36,23 +35,21 @@ struct FeatherApp: App {
 
     private var gatedContent: some View {
         Group {
-            switch storage.state {
-            case .waiting, .loading:
-                ProgressView("جارٍ فتح المكتبة…").task { storage.load() }
-            case .failed(let message):
+            if case .failed(let message) = storage.state {
                 VStack(spacing: 16) {
                     Text(message).multilineTextAlignment(.center)
                     Button("إعادة المحاولة") { storage.load() }
                 }.padding()
-            case .ready:
-                if let release = updateGate.required {
+            } else {
+                switch StoreLaunchScreen(libraryReady: storage.state == .ready, checked: updateGate.checked, required: updateGate.required) {
+                case .mandatory(let release):
                     StoreUpdateScreen(release: release, gate: updateGate)
                         .id(release).environment(\.managedObjectContext, storage.context)
                         .modifier(StoreThemeHost())
-                } else if updateGate.checked {
+                case .store:
                     storeContent
-                } else {
-                    ProgressView("جارٍ فحص تحديث المتجر…")
+                case .welcome:
+                    AMARYTWelcomeView().task { if storage.state == .waiting { storage.load() } }
                 }
             }
         }
@@ -65,8 +62,7 @@ struct FeatherApp: App {
     }
 
     private var storeContent: some View {
-            ZStack {
-			VStack(spacing: 0) {
+            VStack(spacing: 0) {
 				if !downloadManager.manualDownloads.isEmpty {
 				DownloadHeaderView(downloadManager: downloadManager)
 					.transition(.move(edge: .top).combined(with: .opacity))
@@ -84,10 +80,6 @@ struct FeatherApp: App {
 					)
 				}
 			}
-                if showWelcome {
-                    AMARYTWelcomeView().transition(.opacity).zIndex(1)
-                }
-            }
             .modifier(CardInstallHost())
             .modifier(StoreThemeHost())
             .task {
@@ -96,8 +88,6 @@ struct FeatherApp: App {
                 let links = pendingLinks
                 pendingLinks.removeAll()
                 links.forEach(_handleURL)
-                try? await Task.sleep(for: .seconds(2.5))
-                withAnimation(.easeOut(duration: 0.45)) { showWelcome = false }
             }
     }
 

@@ -23,6 +23,8 @@ struct SigningView: View {
 	@State private var _selectedPhoto: PhotosPickerItem? = nil
 	@StateObject private var batch = CloneBatch()
     @State private var copies = 1
+    @State private var reviewedIDs: [String] = []
+    @State private var initializedOptions = false
     @State private var showBatch = false
 	@State var appIcon: UIImage?
 	
@@ -54,7 +56,10 @@ struct SigningView: View {
                 _cert()
                 Section("تكرار التطبيق") {
                     Stepper("عدد النسخ: \(copies)", value: $copies, in: 1...ClonePolicy.limit)
-                    if copies > 1 { Text("تُحفظ النسخ الموقّعة في المكتبة. تحتفظ الأولى بمعرّف التطبيق الأصلي.").font(.caption) }
+                    if copies > 1 {
+                        ClonePlanView(base: _temporaryOptions.appIdentifier ?? app.identifier ?? "",
+                                      original: app.identifier, count: copies, certificate: _selectedCert(), approved: $reviewedIDs)
+                    }
                 }
 				_customizationProperties(for: app)
 				
@@ -78,6 +83,7 @@ struct SigningView: View {
 									.padding()
 							}
 							.buttonStyle(.plain)
+                            .disabled(copies > 1 && reviewedIDs.count != copies)
 							.offset(y: UIDevice.current.userInterfaceIdiom == .pad ? -20 : -40)
 						}
 				}
@@ -133,6 +139,8 @@ struct SigningView: View {
 			.animation(.smooth, value: _isSigning)
 		}
 		.onAppear {
+			guard !initializedOptions else { return }
+            initializedOptions = true
 			// ppq protection
 			if
 				_optionsManager.options.ppqProtection,
@@ -214,9 +222,9 @@ extension SigningView {
 					)
 				}
 			} else {
-				Text(.localized("No Certificate"))
-					.font(.footnote)
-					.foregroundColor(.disabled())
+                NavigationLink("إضافة شهادة أو اختيار ملف تزويد") {
+                    CertificatesView(selectedCert: $_temporaryCertificate)
+                }
 			}
 		}
 	}
@@ -279,7 +287,7 @@ extension SigningView {
 	private func _start() {
         if copies > 1 {
             showBatch = true
-            batch.start(app: app, options: _temporaryOptions, icon: appIcon, certificate: _selectedCert(), count: copies)
+            batch.start(app: app, options: _temporaryOptions, icon: appIcon, certificate: _selectedCert(), count: copies, expected: reviewedIDs)
             return
         }
 		guard
