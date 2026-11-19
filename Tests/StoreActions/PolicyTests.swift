@@ -33,6 +33,13 @@ struct StoreActionTests {
         for (count, occupied, profile) in [(2, Set<String>(), exact), (0, [], wildcard), (11, [], wildcard)] {
             precondition((try? ClonePolicy.identifiers(base: base, count: count, occupied: occupied, profile: profile)) == nil)
         }
+        let firstAdditional = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 2, occupied: [])
+        precondition(firstAdditional == base + ".1")
+        let nextAdditional = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 2, occupied: [base + ".1"])
+        precondition(nextAdditional == base + ".2")
+        let selectedThird = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 3, occupied: [])
+        precondition(selectedThird == base + ".2")
+        precondition((try? ClonePolicy.selectedCloneIdentifier(base: base, selection: 1, occupied: [])) == nil)
         let edited = "com.example.manual"
         let reviewed = try ClonePolicy.identifiers(base: edited, count: 3, occupied: ["COM.EXAMPLE.MANUAL.1"], profile: wildcard)
         precondition(reviewed == [edited, edited + ".2", edited + ".3"])
