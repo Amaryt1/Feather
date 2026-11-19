@@ -60,7 +60,7 @@ struct DownloadButtonView: View {
 
     private var getLabel: some View {
         SourceActivityLabel(id: operationID, idle: .localized("Get"))
-            .lineLimit(0)
+            .lineLimit(1)
             .font(.headline.bold())
             .foregroundStyle(Color.accentColor)
             .padding(.horizontal, 24)

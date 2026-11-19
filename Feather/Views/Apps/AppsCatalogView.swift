@@ -646,6 +646,50 @@ private final class AppsCatalogMemoryCache {
 }
 
 
+/// The summary feed omits the IPA URL. Reuse its last resolved route only while
+/// that specific version is running, including when the catalog is offline.
+@MainActor
+private final class CatalogOperationRoutes: ObservableObject {
+    static let shared = CatalogOperationRoutes()
+    private struct Key: Hashable {
+        let source: String
+        let id: String
+        let version: String?
+        init(_ app: AMARYTCatalogAPI.AppSummary) {
+            source = app.sourceId
+            id = app.id
+            version = app.version
+        }
+    }
+    struct Entry {
+        let route: SourceAppsView.SourceAppRoute
+        let operationID: String
+        @MainActor var active: Bool {
+            let manager = DownloadManager.shared
+            return manager.getDownload(by: operationID) != nil || manager.outcomes[operationID] == .signing
+                || manager.localSessionIDs.contains(operationID)
+        }
+    }
+    @Published private var entries: [Key: Entry] = [:]
+    func entry(_ app: AMARYTCatalogAPI.AppSummary) -> Entry? { entries[Key(app)] }
+    func record(_ route: SourceAppsView.SourceAppRoute, for app: AMARYTCatalogAPI.AppSummary) {
+        if entries.count >= 64 { entries = entries.filter { $0.value.active } }
+        let id = SourceOperationKey.make(sourceURL: route.sourceURL, repository: route.source, app: route.app).id
+        entries[Key(app)] = Entry(route: route, operationID: id)
+    }
+}
+
+private struct CatalogOperationLabel: View {
+    let app: AMARYTCatalogAPI.AppSummary
+    let idle: String
+    @ObservedObject private var routes = CatalogOperationRoutes.shared
+    init(app: AMARYTCatalogAPI.AppSummary, idle: String) { self.app = app; self.idle = idle }
+    var body: some View {
+        if let entry = routes.entry(app) { SourceActivityLabel(id: entry.operationID, idle: idle) }
+        else { Text(idle) }
+    }
+}
+
 @MainActor
 struct AppsCatalogView: View {
     // These repositories are intentionally fetched internally and never added to the visible Sources list.
@@ -1185,7 +1229,7 @@ struct AppsCatalogView: View {
                                         HStack {
                                             Text(app.version.map { "v\($0)" } ?? "API").font(.caption2)
                                             Spacer()
-                                            Text("التفاصيل").font(.caption)
+                                            CatalogOperationLabel(app: app, idle: "التفاصيل").font(.caption)
                                         }
                                     }
                                     .foregroundStyle(.primary)
@@ -1280,6 +1324,10 @@ struct AppsCatalogView: View {
     /// The standard detail screen then owns Get, download, signing and library behavior.
     @MainActor
     private func openAPIApp(_ summary: AMARYTCatalogAPI.AppSummary) async {
+        if let entry = CatalogOperationRoutes.shared.entry(summary), entry.active {
+            selectedRoute = entry.route
+            return
+        }
         guard !apiOpeningApp, let path = summary.detailPath else { return }
         apiOpeningApp = true
         defer { apiOpeningApp = false }
@@ -1319,9 +1367,11 @@ struct AppsCatalogView: View {
                 apiError = "بيانات التطبيق غير صالحة للتثبيت"
                 return
             }
-            selectedRoute = SourceAppsView.SourceAppRoute(
+            let route = SourceAppsView.SourceAppRoute(
                 sourceURL: (item["sourceURL"] as? String).flatMap { URL(string: $0) }, source: repository, app: app
             )
+            CatalogOperationRoutes.shared.record(route, for: summary)
+            selectedRoute = route
             apiError = nil
         } catch {
             apiError = "تعذر فتح تفاصيل التطبيق: \(error.localizedDescription)"
@@ -1566,7 +1616,7 @@ private struct AppsCatalogRecentUpdatesView: View {
                                                     .font(.caption2).foregroundStyle(.secondary)
                                                 Spacer(minLength: 2)
                                                 Button { openAPI(app) } label: {
-                                                    Text("الحصول")
+                                                    CatalogOperationLabel(app: app, idle: "الحصول")
                                                         .font(.subheadline.weight(.semibold))
                                                         .padding(.horizontal, 18).padding(.vertical, 7)
                                                         .background(Color(uiColor: .tertiarySystemGroupedBackground), in: Capsule())

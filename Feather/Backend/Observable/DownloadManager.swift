@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CryptoKit
 import Combine
 import CoreData
 import UIKit.UIImpactFeedbackGenerator
@@ -274,7 +275,14 @@ extension DownloadManager: URLSessionDownloadDelegate {
 			
 			// Use the server-suggested filename if available, otherwise fallback
 			let suggestedFileName = URL(fileURLWithPath: downloadTask.response?.suggestedFilename ?? download.fileName).lastPathComponent
-			let destinationURL = customTempDir.appendingPathComponent(UUID().uuidString + "-" + suggestedFileName)
+			// Repeated downloads of a source version replace their own history file;
+            // concurrent versions with identical filenames get separate directories.
+            let identity = download.id.hasPrefix("source:") ? download.id : download.url.absoluteString
+            let digest = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+            let directory = customTempDir.appendingPathComponent(digest, isDirectory: true)
+            try FileManager.default.createDirectoryIfNeeded(at: directory)
+            let safeName = ["", ".", "..", "/"].contains(suggestedFileName) ? "download.ipa" : suggestedFileName
+            let destinationURL = directory.appendingPathComponent(safeName)
 			
 			try FileManager.default.removeFileIfNeeded(at: destinationURL)
 			try FileManager.default.moveItem(at: location, to: destinationURL)
