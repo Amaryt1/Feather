@@ -56,18 +56,19 @@ struct StoreActionTests {
             base: "com.unrelated.player", original: "com.unrelated.player",
             selection: 3, occupied: [], profile: exact)) == nil)
         // A wildcard profile accepts the original .1 path when possible.
-        precondition(try ClonePolicy.selectedCloneIdentifier(
+        let allowedOriginalClone = try ClonePolicy.selectedCloneIdentifier(
             base: base, original: base, selection: 2,
-            occupied: [], profile: wildcard) == base + ".1")
+            occupied: [], profile: wildcard)
+        precondition(allowedOriginalClone == base + ".1")
         // If the source app is outside the wildcard, only the clone is rebased.
         let external = "com.other.player"
-        let allowed = try ClonePolicy.selectedCloneIdentifier(
+        let allowedClone = try ClonePolicy.selectedCloneIdentifier(
             base: external, original: external, selection: 2,
             occupied: [], profile: wildcard)
-        precondition(allowed == "com.example.com-other-player.1" && wildcard.permits(allowed))
+        precondition(allowedClone == "com.example.com-other-player.1" && wildcard.permits(allowedClone))
         let next = try ClonePolicy.selectedCloneIdentifier(
             base: external, original: external, selection: 2,
-            occupied: [allowed], profile: wildcard)
+            occupied: [allowedClone], profile: wildcard)
         precondition(next == "com.example.com-other-player.2")
         let edited = "com.example.manual"
         let reviewed = try ClonePolicy.identifiers(base: edited, count: 3, occupied: ["COM.EXAMPLE.MANUAL.1"], profile: wildcard)
