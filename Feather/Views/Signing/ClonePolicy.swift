@@ -43,6 +43,24 @@ enum ClonePolicy {
         }
     }
 
+    /// Select exactly one additional app, not an entire signing batch.
+    /// The first plus targets .1; subsequent choices target .2, .3, etc.
+    /// Skip identifiers already saved in the library to avoid overwriting a clone.
+    static func selectedCloneIdentifier(base: String, selection: Int, occupied: Set<String>) throws -> String {
+        guard (2...limit).contains(selection), !base.isEmpty,
+              base.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({
+                  !$0.isEmpty && $0.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
+              }) else { throw DirectError("رقم النسخة أو معرّف التطبيق غير صالح.") }
+        let used = Set(occupied.map { $0.lowercased() })
+        var suffix = selection - 1
+        var candidate = "\(base).\(suffix)"
+        while used.contains(candidate.lowercased()) {
+            suffix += 1
+            candidate = "\(base).\(suffix)"
+        }
+        return candidate
+    }
+
     static func claims(_ original: [String: Any], id: String, profile: DirectProfile, grants: [String: Any]) throws -> [String: Any] {
         guard profile.permits(id), let prefix = profile.Entitlements.applicationIdentifier.split(separator: ".").first else {
             throw DirectError("ملف التزويد لا يغطي " + id)
