@@ -205,7 +205,12 @@ struct StoreUpdateScreen: View {
 
                     if engine.phase == .ready {
                         Button {
-                            if engine.storeUpdatePage != nil { showingServerHandoff = true }
+                            if engine.storeUpdatePage != nil {
+                                #if !targetEnvironment(macCatalyst)
+                                BackgroundAudioManager.shared.start()
+                                #endif
+                                showingServerHandoff = true
+                            }
                             else { engine.submit() }
                         } label: {
                             Label("تثبيت التحديث", systemImage: "square.and.arrow.down")
@@ -268,6 +273,10 @@ struct StoreUpdateScreen: View {
                 } }
             }
             .sheet(isPresented: $showingServerHandoff, onDismiss: {
+                // Keep the same background service lifetime as the normal Semi Local installer.
+                #if !targetEnvironment(macCatalyst)
+                BackgroundAudioManager.shared.stop()
+                #endif
                 // iOS may still be installing; never treat closing Safari as a successful update.
             }) {
                 if let page = engine.storeUpdatePage {
