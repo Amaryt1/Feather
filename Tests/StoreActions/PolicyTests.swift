@@ -40,6 +40,35 @@ struct StoreActionTests {
         let selectedThird = try ClonePolicy.selectedCloneIdentifier(base: base, selection: 3, occupied: [])
         precondition(selectedThird == base + ".2")
         precondition((try? ClonePolicy.selectedCloneIdentifier(base: base, selection: 1, occupied: [])) == nil)
+        // An exact provisioning profile can sign its one registered app ID as
+        // a second install only when it is different from the original and unused.
+        let fixedClone = try ClonePolicy.selectedCloneIdentifier(
+            base: "com.unrelated.player", original: "com.unrelated.player",
+            selection: 2, occupied: [], profile: exact)
+        precondition(fixedClone == base)
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: "com.unrelated.player", original: "com.unrelated.player",
+            selection: 2, occupied: [base], profile: exact)) == nil)
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: base, original: base, selection: 2,
+            occupied: [], profile: exact)) == nil)
+        precondition((try? ClonePolicy.selectedCloneIdentifier(
+            base: "com.unrelated.player", original: "com.unrelated.player",
+            selection: 3, occupied: [], profile: exact)) == nil)
+        // A wildcard profile accepts the original .1 path when possible.
+        precondition(try ClonePolicy.selectedCloneIdentifier(
+            base: base, original: base, selection: 2,
+            occupied: [], profile: wildcard) == base + ".1")
+        // If the source app is outside the wildcard, only the clone is rebased.
+        let external = "com.other.player"
+        let allowed = try ClonePolicy.selectedCloneIdentifier(
+            base: external, original: external, selection: 2,
+            occupied: [], profile: wildcard)
+        precondition(allowed == "com.example.com-other-player.1" && wildcard.permits(allowed))
+        let next = try ClonePolicy.selectedCloneIdentifier(
+            base: external, original: external, selection: 2,
+            occupied: [allowed], profile: wildcard)
+        precondition(next == "com.example.com-other-player.2")
         let edited = "com.example.manual"
         let reviewed = try ClonePolicy.identifiers(base: edited, count: 3, occupied: ["COM.EXAMPLE.MANUAL.1"], profile: wildcard)
         precondition(reviewed == [edited, edited + ".2", edited + ".3"])
