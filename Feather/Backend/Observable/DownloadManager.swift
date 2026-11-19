@@ -238,6 +238,8 @@ extension DownloadManager: URLSessionDownloadDelegate {
         var options = OptionsManager.shared.options
         options.signingOption = .default
         options.appIdentifier = nil
+        // ZsignHandler passes the inverse flag; store installs require the embedded profile.
+        options.removeProvisioning = true
         if download.copyCount > 1 {
             signingTasks[id] = Task { @MainActor in
                 defer { self.signingTasks.removeValue(forKey: id) }

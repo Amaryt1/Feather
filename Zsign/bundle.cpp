@@ -372,7 +372,7 @@ bool ZBundle::SignNode(jvalue& jvNode)
 #if !TARGET_OS_IOS
 		return false;
 #else
-		return true;
+		return !jvNode.has("cloneClaims");
 #endif
 	}
 
