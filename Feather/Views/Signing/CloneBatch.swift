@@ -45,7 +45,7 @@ final class CloneBatch: ObservableObject {
         }
         let profile = try DirectProfile.read(url)
         try Self.validateIdentity(key, password: certificate.password ?? "", profile: url)
-        let plan = try Self.plan(base: base, original: app.identifier, count: count)
+        let plan = try Self.plan(base: base, original: app.identifier, count: count, profile: profile)
         try ClonePolicy.validate(plan, profile: profile)
         if let expected, plan != expected {
             throw DirectError("تغيرت معرّفات النسخ المتاحة. راجع المعاينة ثم أعد المحاولة.")
@@ -77,7 +77,7 @@ final class CloneBatch: ObservableObject {
         return uuids
     }
 
-    static func plan(base: String, original: String?, count: Int) throws -> [String] {
+    static func plan(base: String, original: String?, count: Int, profile: DirectProfile) throws -> [String] {
         var occupied = Self.reserved
         for entity in ["Imported", "Signed"] {
             let request = NSFetchRequest<NSDictionary>(entityName: entity)
@@ -95,7 +95,7 @@ final class CloneBatch: ObservableObject {
             throw DirectError("المعرّف الأساسي مستخدم بالفعل. اختر معرّفًا آخر.")
         }
         guard count > 1 else { throw DirectError("النسخة الأصلية تُوقّع من المسار المعتاد.") }
-        let target = try ClonePolicy.selectedCloneIdentifier(base: base, selection: count, occupied: occupied)
+        let target = try ClonePolicy.selectedCloneIdentifier(base: base, original: original, selection: count, occupied: occupied, profile: profile)
         return [target]
     }
 
@@ -129,6 +129,13 @@ struct ClonePlanView: View {
                 Text(verbatim: id).font(.caption.monospaced()).textSelection(.enabled)
             }
             if let issue { Text(issue).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            if let certificate,
+               let url = Storage.shared.getFile(.provision, from: certificate),
+               let profile = try? DirectProfile.read(url),
+               !profile.Entitlements.applicationIdentifier.hasSuffix("*"), issue == nil {
+                Text("ملف التزويد هذا يسمح بمعرّف واحد فقط. يمكن استخدامه لنسخة إضافية واحدة إذا لم يكن المعرّف مستخدمًا.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .task(id: [base, original ?? "", String(count), certificate?.objectID.uriRepresentation().absoluteString ?? ""]) {
             refresh()
@@ -141,12 +148,13 @@ struct ClonePlanView: View {
         approved = []
         identifiers = []
         do {
-            identifiers = try CloneBatch.plan(base: base, original: original, count: count)
             guard let certificate, !certificate.revoked, (certificate.expiration ?? .distantPast) > Date(),
                   let url = Storage.shared.getFile(.provision, from: certificate) else {
                 throw DirectError("اختر شهادة صالحة وملف تزويد للنسخ.")
             }
-            try ClonePolicy.validate(identifiers, profile: DirectProfile.read(url))
+            let profile = try DirectProfile.read(url)
+            identifiers = try CloneBatch.plan(base: base, original: original, count: count, profile: profile)
+            try ClonePolicy.validate(identifiers, profile: profile)
             approved = identifiers
             issue = nil
         } catch { issue = error.localizedDescription }
