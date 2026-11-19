@@ -200,7 +200,7 @@ final class SigningHandler: NSObject {
 			_options.signingOption == .default,
 			appCertificate != nil
 		{
-			try await handler.sign(requireResult: !publishToLibrary || cloneID != nil)
+			try await handler.sign(requireResult: true)
 //		} else if _options.signingOption == .adhoc {
 //			try await handler.adhocSign()
 		} else if _options.signingOption == .onlyModify {
@@ -209,8 +209,8 @@ final class SigningHandler: NSObject {
 			throw SigningFileHandlerError.missingCertifcate
 		}
 		
-		if let cloneID {
-            if let error = handler.hadError { throw error }
+		if let error = handler.hadError { throw error }
+        if let cloneID {
             try validateClone(movedAppPath, expectedID: cloneID)
             try Task.checkCancellation()
         }
@@ -226,9 +226,6 @@ final class SigningHandler: NSObject {
             }
         }
 		
-		if let error = handler.hadError {
-			throw error
-		}
 	}
 	
 	func move() async throws {

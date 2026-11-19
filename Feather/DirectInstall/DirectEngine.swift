@@ -35,7 +35,7 @@ final class DirectEngine: ObservableObject {
     private var metadata: DirectMetadata?
     private var listener: DirectLocalServer?
     private var updateServer: ServerInstaller?
-    private var updateServerStatus: InstallerStatusViewModel?
+    private var updateTransfer: AnyCancellable?
     var storeUpdatePage: URL? { updateServer?.pageEndpoint }
     @Published var preparedTitle: String?
     @Published var preparedVersion: String?
@@ -104,7 +104,7 @@ final class DirectEngine: ObservableObject {
                     } else { cert = try certificate() }
                     let ipa = path.appendingPathComponent("source.ipa")
                     phase = .downloading
-                    try await download(try DirectPolicy.https(url), to: ipa)
+                    try await download(try DirectPolicy.https(url), to: ipa, retries: update == nil ? DirectPreferences.retries : 1)
                     try Task.checkCancellation()
                     if let update { try await StoreUpdateSigning.verifyFile(ipa, release: update) }
                     phase = .signing
@@ -135,15 +135,21 @@ final class DirectEngine: ObservableObject {
         guard archive.isFileURL, FileManager.default.fileExists(atPath: archive.path) else {
             throw DirectError("ملف التحديث الموقّع غير موجود.")
         }
-        guard UserDefaults.standard.integer(forKey: "Feather.serverMethod") == 1,
-              UserDefaults.standard.bool(forKey: "Feather.ipFix") else {
-            throw DirectError("يلزم اختيار Semi Local وتفعيل Use localhost only من إعدادات السيرفر.")
-        }
         let status = InstallerStatusViewModel(isIdevice: false)
         let app = StagedApp(identifier: metadata.bundle, nameOverride: metadata.title, versionOverride: metadata.version)
-        let server = try ServerInstaller(app: app, viewModel: status)
+        let server = try ServerInstaller(app: app, viewModel: status, updateLoopback: true)
         server.packageUrl = archive
-        updateServerStatus = status
+        updateTransfer = status.$status.receive(on: DispatchQueue.main).sink { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .sendingPayload: self.phase = .sent
+            case .installing: self.servedPackage = true; self.endBackground()
+            case .broken(let error):
+                self.fail(DirectError("انقطع نقل ملف التحديث. " + String(describing: error)))
+                self.endBackground()
+            default: break
+            }
+        }
         updateServer = server
         phase = .ready
     }
@@ -179,8 +185,7 @@ final class DirectEngine: ObservableObject {
         return cert
     }
 
-    private func download(_ url: URL, to file: URL) async throws {
-        let retries = DirectPreferences.retries
+    private func download(_ url: URL, to file: URL, retries: Int) async throws {
         var resume: Data?
         let directory = file.deletingLastPathComponent()
         for attempt in 0...retries {
@@ -294,13 +299,24 @@ final class DirectEngine: ObservableObject {
         self.metadata = metadata
     }
 
+    func beginStoreHandoff() {
+        guard updateServer != nil, phase == .ready || phase == .sent else { return }
+        phase = .submitting
+        if background == .invalid {
+            background = UIApplication.shared.beginBackgroundTask(withName: "AMARYT Store Update") { [weak self] in
+                Task { @MainActor in self?.endBackground() }
+            }
+        }
+    }
+
+    func storePageDismissed() {
+        guard updateServer != nil, phase == .submitting else { return }
+        phase = .ready
+        endBackground()
+    }
+
     func submit() {
         guard phase == .ready, work == nil else { return }
-        if updateServer != nil {
-            // The update UI presents the existing Semi Local Safari handoff page.
-            phase = .sent
-            return
-        }
         guard let listener else { return }
         phase = .submitting
         work = Task {
@@ -336,7 +352,7 @@ final class DirectEngine: ObservableObject {
         endBackground()
         listener = nil
         updateServer = nil
-        updateServerStatus = nil
+        updateTransfer = nil
         if let folder { try? FileManager.default.removeItem(at: folder) }
         folder = nil; archive = nil; metadata = nil
     }

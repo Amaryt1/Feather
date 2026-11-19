@@ -34,7 +34,6 @@ class Download: ObservableObject, Identifiable, @unchecked Sendable {
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
     var packageTask: Task<Void, Never>?
-    var reviewedCloneIDs: [String]?
     var cloneBaseOverride: String?
     var copyCount = 1
     var signingCertificate: CertificatePair?
@@ -62,6 +61,7 @@ class DownloadManager: NSObject, ObservableObject {
 	static let shared = DownloadManager()
 	
 	@Published var outcomes = SourceOutcomes()
+    @Published private(set) var signingIdentifiers: [String: String] = [:]
     private var signingTasks: [String: Task<Void, Never>] = [:]
     var localSessionIDs = Set<String>()
 	@Published var downloads: [Download] = []
@@ -95,7 +95,7 @@ class DownloadManager: NSObject, ObservableObject {
 		id: String = UUID().uuidString,
 		sourceProvenance: SourceAppProvenance? = nil,
         signingCertificate: CertificatePair? = nil,
-        copyCount: Int = 1, reviewedCloneIDs: [String]? = nil, cloneBaseOverride: String? = nil
+        copyCount: Int = 1, cloneBaseOverride: String? = nil
     ) -> Download? {
         guard outcomes[id] != .signing, !localSessionIDs.contains(id) else { return nil }
         let sourceOperation = id.hasPrefix("source:")
@@ -106,7 +106,6 @@ class DownloadManager: NSObject, ObservableObject {
             return existing
         }
         let download = Download(id: id, url: url, sourceProvenance: sourceProvenance)
-        download.reviewedCloneIDs = reviewedCloneIDs
         download.cloneBaseOverride = cloneBaseOverride
         download.copyCount = copyCount
         download.signingCertificate = signingCertificate
@@ -248,14 +247,13 @@ extension DownloadManager: URLSessionDownloadDelegate {
             // Clones use the user's manual signing preferences. Keep the
             // existing embedded-profile override for ordinary store installs.
             options.removeProvisioning = OptionsManager.shared.options.removeProvisioning
-            options.appIdentifier = download.cloneBaseOverride ?? imported.identifier.flatMap { options.identifiers[$0] }
+            options.appIdentifier = OptionsManager.shared.options.signingBase(for: imported.identifier, certificate: certificate, manual: download.cloneBaseOverride)
             signingTasks[id] = Task { @MainActor in
-                defer { self.signingTasks.removeValue(forKey: id) }
+                defer { self.signingTasks.removeValue(forKey: id); self.signingIdentifiers.removeValue(forKey: id) }
                 do {
-                    let signed = try await CloneBatch().sign(app: imported, options: options, icon: nil,
-                                                             certificate: certificate, count: download.copyCount, expected: download.reviewedCloneIDs)
-                    guard signed.count == 1, let uuid = signed.first else {
-                        throw DirectError("تعذّر تجهيز النسخة الإضافية المطلوبة.")
+                    let uuid = try await CloneBatch().sign(app: imported, options: options, icon: nil,
+                                                             certificate: certificate, count: download.copyCount) { target in
+                        self.signingIdentifiers[id] = target
                     }
                     self.outcomes[id] = .ready(uuid)
                 } catch is CancellationError { self.outcomes[id] = .cancelled }

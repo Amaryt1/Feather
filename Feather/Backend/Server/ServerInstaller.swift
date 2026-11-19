@@ -18,6 +18,7 @@ import IDeviceSwift
 class ServerInstaller: Identifiable, ObservableObject {
 	let id = UUID()
 	let port = Int.random(in: 4000...8000)
+	let updateLoopback: Bool
 	private var _needsShutdown = false
 	
 	var packageUrl: URL?
@@ -25,7 +26,8 @@ class ServerInstaller: Identifiable, ObservableObject {
 	@ObservedObject var viewModel: InstallerStatusViewModel
 	private var _server: Application?
 
-	init(app: AppInfoPresentable, viewModel: InstallerStatusViewModel) throws {
+	init(app: AppInfoPresentable, viewModel: InstallerStatusViewModel, updateLoopback: Bool = false) throws {
+        self.updateLoopback = updateLoopback
 		self.app = app
 		self.viewModel = viewModel
 		try _setup()
@@ -107,10 +109,10 @@ class ServerInstaller: Identifiable, ObservableObject {
 	}
 		
 	func getServerMethod() -> Int {
-		UserDefaults.standard.integer(forKey: "Feather.serverMethod")
+		updateLoopback ? 1 : UserDefaults.standard.integer(forKey: "Feather.serverMethod")
 	}
 	
 	func getIPFix() -> Bool {
-		UserDefaults.standard.bool(forKey: "Feather.ipFix")
+		updateLoopback || UserDefaults.standard.bool(forKey: "Feather.ipFix")
 	}
 }

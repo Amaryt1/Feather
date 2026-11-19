@@ -105,15 +105,21 @@ enum StoreUpdateSigning {
         }
         let profile = try DirectProfile.read(url)
         try CloneBatch.validateIdentity(key, password: cert.password ?? "", profile: url)
-        guard let id = Bundle.main.bundleIdentifier, profile.permits(id),
-              let executable = Bundle.main.executableURL, let data = LCGetMachOEntitlements(executable.path),
+        guard let id = Bundle.main.bundleIdentifier else { throw DirectError("تعذّرت قراءة معرّف المتجر المثبّت.") }
+        guard profile.permits(id) else {
+            throw DirectError("ملف التزويد يسمح بـ " + profile.Entitlements.applicationIdentifier + " ولا يغطي المتجر المثبّت " + id + ".")
+        }
+        guard let executable = Bundle.main.executableURL, let data = LCGetMachOEntitlements(executable.path),
               let claims = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let prefix = profile.Entitlements.applicationIdentifier.split(separator: ".").first,
-              claims["application-identifier"] as? String == String(prefix) + "." + id,
-              let plist = try PropertyListSerialization.propertyList(from: DirectProfile.payload(url), format: nil) as? [String: Any],
-              let teams = plist["TeamIdentifier"] as? [String],
-              let team = claims["com.apple.developer.team-identifier"] as? String, teams.contains(team) else {
-            throw DirectError("اختر ملف تزويد متوافقًا مع هوية وفريق توقيع المتجر المثبّت.")
+              let team = claims["com.apple.developer.team-identifier"] as? String,
+              let identity = claims["application-identifier"] as? String else {
+            throw DirectError("تعذّرت قراءة هوية التوقيع من النسخة المثبّتة للتحقق من التحديث فوقها.")
+        }
+        guard let prefix = profile.Entitlements.applicationIdentifier.split(separator: ".").first,
+              identity == String(prefix) + "." + id else { throw DirectError("بادئة هوية ملف التزويد تختلف عن هوية التطبيق المثبّت " + identity) }
+        let plist = try PropertyListSerialization.propertyList(from: DirectProfile.payload(url), format: nil) as? [String: Any]
+        guard let teams = plist?["TeamIdentifier"] as? [String], teams.contains(team) else {
+            throw DirectError("ملف التزويد لا ينتمي إلى فريق المتجر المثبّت " + team)
         }
         return cert
     }
@@ -126,8 +132,26 @@ struct StoreUpdateScreen: View {
     @State private var message = ""
     @State private var adding = false
     @State private var choosing = false
-    @State private var settings = false
     @State private var showingServerHandoff = false
+    @State private var updateAudioActive = false
+
+    // Mirror the working Semi Local installer: keep the loopback HTTP
+    // transfer alive while iOS fetches the IPA outside the app.
+    private func startUpdateAudio() {
+        #if !targetEnvironment(macCatalyst)
+        guard !updateAudioActive else { return }
+        updateAudioActive = true
+        BackgroundAudioManager.shared.start()
+        #endif
+    }
+
+    private func stopUpdateAudio() {
+        #if !targetEnvironment(macCatalyst)
+        guard updateAudioActive else { return }
+        updateAudioActive = false
+        BackgroundAudioManager.shared.stop()
+        #endif
+    }
 
     private var working: Bool {
         [.preparing, .downloading, .signing, .submitting].contains(engine.phase)
@@ -141,7 +165,7 @@ struct StoreUpdateScreen: View {
         case .preparing: return "جارٍ تجهيز التثبيت"
         case .ready: return "التحديث جاهز للتثبيت"
         case .submitting: return "جارٍ إرسال طلب التثبيت إلى iOS"
-        case .sent: return "تم إرسال طلب التثبيت. افتح الإصدار الجديد للتحقق من نجاحه."
+        case .sent: return engine.servedPackage ? "اكتمل نقل الملف. يُفحص الإصدار عند فتح المتجر مجددًا." : "بدأ iOS بطلب ملف التحديث. أبقِ المتجر مفتوحًا."
         case .failed: return "تعذّر تجهيز التحديث"
         }
     }
@@ -203,15 +227,16 @@ struct StoreUpdateScreen: View {
                         } else { ProgressView() }
                     }
 
-                    if engine.phase == .ready {
+                    if engine.phase == .ready || engine.phase == .sent {
                         Button {
-                            if engine.storeUpdatePage != nil {
-                                #if !targetEnvironment(macCatalyst)
-                                BackgroundAudioManager.shared.start()
-                                #endif
-                                showingServerHandoff = true
+                            guard engine.storeUpdatePage != nil else {
+                                message = "صفحة تثبيت التحديث المحلية غير متاحة."
+                                return
                             }
-                            else { engine.submit() }
+                            message = ""
+                            engine.beginStoreHandoff()
+                            startUpdateAudio()
+                            showingServerHandoff = true
                         } label: {
                             Label("تثبيت التحديث", systemImage: "square.and.arrow.down")
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
@@ -233,7 +258,7 @@ struct StoreUpdateScreen: View {
                         .disabled(working)
                     }
 
-                    if !working {
+                    if engine.phase == .idle || engine.phase == .failed {
                         Button { adding = true } label: {
                             Label("إضافة شهادة", systemImage: "plus.rectangle.on.folder")
                                 .frame(maxWidth: .infinity)
@@ -252,9 +277,6 @@ struct StoreUpdateScreen: View {
                     .buttonStyle(.bordered)
 
                     DisclosureGroup("خيارات متقدمة") {
-                        Button { settings = true } label: {
-                            Label("إعدادات المحرك والثقة المحلية", systemImage: "gearshape")
-                        }
                         Button { Task { await gate.refresh() } } label: {
                             Label("فحص التحديث مجددًا", systemImage: "arrow.clockwise")
                         }
@@ -265,7 +287,11 @@ struct StoreUpdateScreen: View {
             }
             .storeScreen()
             .sheet(isPresented: $adding, onDismiss: { _ = checkCertificate() }) {
-                CertificatesAddView(onSaved: { _ = checkCertificate() })
+                CertificatesAddView(onSaved: {
+                    // The certificate store orders newly imported pairs first.
+                    UserDefaults.standard.set(0, forKey: "feather.selectedCert")
+                    _ = checkCertificate()
+                })
             }
             .sheet(isPresented: $choosing, onDismiss: { _ = checkCertificate() }) {
                 NavigationStack { CertificatesView().toolbar {
@@ -273,22 +299,38 @@ struct StoreUpdateScreen: View {
                 } }
             }
             .sheet(isPresented: $showingServerHandoff, onDismiss: {
-                // Keep the same background service lifetime as the normal Semi Local installer.
-                #if !targetEnvironment(macCatalyst)
-                BackgroundAudioManager.shared.stop()
-                #endif
-                // iOS may still be installing; never treat closing Safari as a successful update.
+                if engine.phase == .submitting {
+                    message = "أُغلقت صفحة التثبيت قبل رصد طلب ملف IPA. تحقق من الاتصال بخدمة manifest وأعد فتح صفحة التثبيت."
+                }
+                engine.storePageDismissed()
+                // Closing the web page before the IPA request may be an
+                // intentional retry, so stop audio only if there is no
+                // background transfer pending.
+                if engine.phase == .ready || engine.phase == .failed {
+                    stopUpdateAudio()
+                }
             }) {
                 if let page = engine.storeUpdatePage {
                     SafariRepresentableView(url: page).ignoresSafeArea()
                 }
             }
-            .sheet(isPresented: $settings) {
-                NavigationStack { DirectSettingsView().toolbar {
-                    ToolbarItem(placement: .confirmationAction) { Button("تم") { settings = false } }
-                } }
+        }
+        .onDisappear {
+            // The Safari sheet normally closes as soon as the IPA request
+            // starts. Do not destroy its local server or signed archive
+            // before the transfer has completed.
+            let transferring = (engine.phase == .submitting || engine.phase == .sent) && !engine.servedPackage
+            if !transferring && !showingServerHandoff {
+                stopUpdateAudio()
+                engine.cancel()
             }
         }
-        .onDisappear { engine.cancel() }
+        .onChange(of: engine.phase) { phase in
+            if phase == .sent || phase == .failed { showingServerHandoff = false }
+            if phase == .failed { stopUpdateAudio() }
+        }
+        .onChange(of: engine.servedPackage) { completed in
+            if completed { stopUpdateAudio() }
+        }
     }
 }
