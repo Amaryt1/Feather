@@ -202,7 +202,7 @@ struct StoreUpdateScreen: View {
                         } else { ProgressView() }
                     }
 
-                    if engine.phase == .ready || engine.phase == .sent {
+                    if engine.phase == .ready {
                         Button { engine.submit() } label: {
                             Label("تثبيت التحديث", systemImage: "square.and.arrow.down")
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
@@ -256,7 +256,7 @@ struct StoreUpdateScreen: View {
             }
             .storeScreen()
             .sheet(isPresented: $adding, onDismiss: { _ = checkCertificate() }) {
-                CertificatesAddView(onSaved: { UserDefaults.standard.set(0, forKey: "feather.selectedCert") })
+                CertificatesAddView(onSaved: { _ = checkCertificate() })
             }
             .sheet(isPresented: $choosing, onDismiss: { _ = checkCertificate() }) {
                 NavigationStack { CertificatesView().toolbar {
