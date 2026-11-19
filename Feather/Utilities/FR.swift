@@ -48,38 +48,55 @@ enum FR {
 		}
 	}
 	
+    /// Shared signing implementation for manual signing and one-click clones.
+    /// Keep the actual signing steps in one place so both routes produce the
+    /// same library entry, using the Options supplied by the caller.
+    static func signPackageFileAsync(
+        _ app: AppInfoPresentable,
+        using options: Options,
+        icon: UIImage?,
+        certificate: CertificatePair?
+    ) async throws -> String {
+        let handler = SigningHandler(app: app, options: options)
+        handler.appCertificate = certificate
+        handler.appIcon = icon
+
+        do {
+            try await handler.copy()
+            try Task.checkCancellation()
+            try await handler.modify()
+            try? await handler.clean()
+            return handler.signedUUID
+        } catch {
+            try? await handler.clean()
+            throw error
+        }
+    }
+
     @discardableResult
-	static func signPackageFile(
-		_ app: AppInfoPresentable,
-		using options: Options,
-		icon: UIImage?,
-		certificate: CertificatePair?,
+    static func signPackageFile(
+        _ app: AppInfoPresentable,
+        using options: Options,
+        icon: UIImage?,
+        certificate: CertificatePair?,
         onSigned: ((String) -> Void)? = nil,
-		completion: @escaping (Error?) -> Void
-	) -> Task<Void, Never> {
-		Task.detached {
-			let handler = SigningHandler(app: app, options: options)
-			handler.appCertificate = certificate
-			handler.appIcon = icon
-			
-			do {
-				try await handler.copy()
-				try Task.checkCancellation()
-                try await handler.modify()
-				try? await handler.clean()
-                await MainActor.run { onSigned?(handler.signedUUID) }
-				await MainActor.run {
-					completion(nil)
-				}
-			} catch {
-				try? await handler.clean()
-				await MainActor.run {
-					completion(error)
-				}
-			}
-		}
-	}
-	
+        completion: @escaping (Error?) -> Void
+    ) -> Task<Void, Never> {
+        Task.detached {
+            do {
+                let signedUUID = try await signPackageFileAsync(
+                    app, using: options, icon: icon, certificate: certificate
+                )
+                await MainActor.run {
+                    onSigned?(signedUUID)
+                    completion(nil)
+                }
+            } catch {
+                await MainActor.run { completion(error) }
+            }
+        }
+    }
+
 	static func handleCertificateFiles(
 		p12URL: URL,
 		provisionURL: URL,
