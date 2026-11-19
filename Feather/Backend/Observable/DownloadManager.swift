@@ -249,9 +249,12 @@ extension DownloadManager: URLSessionDownloadDelegate {
             signingTasks[id] = Task { @MainActor in
                 defer { self.signingTasks.removeValue(forKey: id) }
                 do {
-                    let copies = try await CloneBatch().sign(app: imported, options: options, icon: nil,
-                                                            certificate: certificate, count: download.copyCount, expected: download.reviewedCloneIDs)
-                    self.outcomes[id] = .copiesReady(copies)
+                    let signed = try await CloneBatch().sign(app: imported, options: options, icon: nil,
+                                                             certificate: certificate, count: download.copyCount, expected: download.reviewedCloneIDs)
+                    guard signed.count == 1, let uuid = signed.first else {
+                        throw DirectError("تعذّر تجهيز النسخة الإضافية المطلوبة.")
+                    }
+                    self.outcomes[id] = .ready(uuid)
                 } catch is CancellationError { self.outcomes[id] = .cancelled }
                 catch { self.outcomes[id] = .failed(error.localizedDescription) }
             }
