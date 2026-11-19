@@ -127,6 +127,7 @@ struct StoreUpdateScreen: View {
     @State private var adding = false
     @State private var choosing = false
     @State private var settings = false
+    @State private var showingServerHandoff = false
 
     private var working: Bool {
         [.preparing, .downloading, .signing, .submitting].contains(engine.phase)
@@ -203,7 +204,10 @@ struct StoreUpdateScreen: View {
                     }
 
                     if engine.phase == .ready {
-                        Button { engine.submit() } label: {
+                        Button {
+                            if engine.storeUpdatePage != nil { showingServerHandoff = true }
+                            else { engine.submit() }
+                        } label: {
                             Label("تثبيت التحديث", systemImage: "square.and.arrow.down")
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                         }
@@ -262,6 +266,13 @@ struct StoreUpdateScreen: View {
                 NavigationStack { CertificatesView().toolbar {
                     ToolbarItem(placement: .confirmationAction) { Button("تم") { choosing = false } }
                 } }
+            }
+            .sheet(isPresented: $showingServerHandoff, onDismiss: {
+                // iOS may still be installing; never treat closing Safari as a successful update.
+            }) {
+                if let page = engine.storeUpdatePage {
+                    SafariRepresentableView(url: page).ignoresSafeArea()
+                }
             }
             .sheet(isPresented: $settings) {
                 NavigationStack { DirectSettingsView().toolbar {
