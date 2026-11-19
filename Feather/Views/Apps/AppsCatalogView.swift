@@ -1355,25 +1355,10 @@ struct AppsCatalogView: View {
             .searchable(text: $searchText, placement: .platform(), prompt: "ابحث عن تطبيق أو لعبة")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { isDownloadsPresented = true } label: {
-                        Image(systemName: "arrow.down.circle")
-                    }
-                    .accessibilityLabel("مدير التحميلات")
+                    CatalogDownloadsButton { isDownloadsPresented = true }
 
                     Button { isRecentUpdatesPresented = true } label: {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .overlay(alignment: .topTrailing) {
-                                if !recentlyUpdatedEntries.isEmpty || !recentAPIApps.isEmpty {
-                                    Text(recentlyUpdatedEntries.count + recentAPIApps.count > 99 ? "99+" : "\(recentlyUpdatedEntries.count + recentAPIApps.count)")
-                                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 4)
-                                        .frame(minWidth: 16, minHeight: 16)
-                                        .background(Color.red.gradient, in: Capsule())
-                                        .offset(x: 9, y: -8)
-                                        .accessibilityHidden(true)
-                                }
-                            }
+                        CatalogToolbarIcon(symbol: "arrow.triangle.2.circlepath", count: recentlyUpdatedEntries.count + recentAPIApps.count)
                     }
                     .accessibilityLabel("التحديثات الأخيرة، \(recentlyUpdatedEntries.count + recentAPIApps.count) تطبيق")
 
@@ -1628,6 +1613,43 @@ private struct AppsCatalogRecentUpdatesView: View {
             }
             .task { await loadNextPage() }
         }
+    }
+}
+
+private struct CatalogDownloadsButton: View {
+    @ObservedObject private var manager = DownloadManager.shared
+    @ObservedObject private var local = SourceDirectSessions.shared
+    let open: () -> Void
+
+    var body: some View {
+        let count = manager.catalogEntries(local).count
+        Button(action: open) { CatalogToolbarIcon(symbol: "arrow.down.circle", count: count) }
+            .accessibilityLabel("مدير التحميلات")
+            .accessibilityValue(Text(count.formatted()))
+    }
+}
+
+private struct CatalogToolbarIcon: View {
+    let symbol: String
+    let count: Int
+    @Environment(\.layoutDirection) private var direction
+
+    var body: some View {
+        Image(systemName: symbol)
+            .overlay(alignment: .topTrailing) {
+                if let text = DownloadManagerEntry.badge(count) {
+                    Text(verbatim: text)
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .fixedSize()
+                        .background(Color.red.gradient, in: Capsule())
+                        .offset(x: direction == .rightToLeft ? -9 : 9, y: -8)
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
+                }
+            }
     }
 }
 

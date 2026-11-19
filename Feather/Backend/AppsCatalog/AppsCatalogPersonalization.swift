@@ -137,6 +137,17 @@ struct AppsCatalogHistoryView: View {
 }
 
 
+@MainActor
+extension DownloadManager {
+    func catalogEntries(_ local: SourceDirectSessions) -> [DownloadManagerEntry] {
+        let sessions = local.sessions.compactMap { id, session -> String? in
+            if case .source = session.input { return id }
+            return nil
+        }
+        return DownloadManagerEntry.visible(sessions: sessions, transfers: downloads.map(\.id), outcomes: outcomes)
+    }
+}
+
 struct AppsCatalogDownloadsView: View {
     @ObservedObject private var manager = DownloadManager.shared
 
@@ -144,9 +155,10 @@ struct AppsCatalogDownloadsView: View {
     @State private var selectedID: String?
 
     var body: some View {
-        NavigationStack {
+        let entries = manager.catalogEntries(local)
+        return NavigationStack {
             Group {
-                if manager.downloads.isEmpty && local.sessions.isEmpty {
+                if entries.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "arrow.down.circle")
                             .font(.system(size: 34))
@@ -158,21 +170,24 @@ struct AppsCatalogDownloadsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding()
                 } else {
-                    List {
-                        ForEach(local.sessions.keys.sorted(), id: \.self) { id in
-                            if let session = local.sessions[id], case let .source(_, title, _, _) = session.input {
-                                Button {
-                                    selectedID = id
-                                } label: {
+                    List(entries) { entry in
+                        switch entry.kind {
+                        case .session:
+                            if let session = local.sessions[entry.id], case let .source(_, title, _, _) = session.input {
+                                Button { selectedID = entry.id } label: {
                                     VStack(alignment: .leading) {
                                         Text(title).font(.headline)
                                         DirectSessionStatus(engine: session.engine)
                                     }
                                 }
                             }
-                        }
-                        ForEach(manager.downloads) { download in
-                            AppsCatalogDownloadRow(download: download)
+                        case .transfer:
+                            if let download = manager.getDownload(by: entry.id) { AppsCatalogDownloadRow(download: download) }
+                        case .signing:
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(SourceOperationKey(encoded: entry.id)?.app ?? "تطبيق").font(.headline)
+                                ProgressView("جارٍ التوقيع")
+                            }
                         }
                     }
                 }
