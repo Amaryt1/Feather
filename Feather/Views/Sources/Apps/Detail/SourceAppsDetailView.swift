@@ -336,7 +336,7 @@ struct SourceAppsDetailView: View {
         let session = localInstalls.sessions[operationID]
         let busy = download != nil || outcome == .signing
         return VStack(alignment: .leading, spacing: 6) {
-            Stepper("تكرار التطبيق · عدد النسخ: \(copies)", value: $copies, in: 1...ClonePolicy.limit)
+            Stepper(copies == 1 ? "تثبيت التطبيق الأصلي" : "تكرار التطبيق · النسخة الإضافية \(copies - 1)", value: $copies, in: 1...ClonePolicy.limit)
                 .disabled(busy || session != nil)
             if copies > 1 && !busy && session == nil {
                 TextField(defaultCloneBase.isEmpty ? "معرّف الحزمة الأساسي" : defaultCloneBase, text: $cloneBase)
@@ -361,7 +361,7 @@ struct SourceAppsDetailView: View {
                     }
                 } label: {
                     Text(session != nil ? "متابعة التثبيت" : "تثبيت")
-                }.disabled(busy || (session == nil && copies > 1 && reviewedIDs.count != copies)).buttonStyle(StoreActionStyle())
+                }.disabled(busy || (session == nil && copies > 1 && reviewedIDs.count != 1)).buttonStyle(StoreActionStyle())
                 Button("استيراد إلى المكتبة") { start() }
                     .disabled(busy || session != nil).buttonStyle(.bordered)
             }
