@@ -5,3 +5,5 @@
 #include "MachOUtils.h"
 #include "iconPoc.h"
 #include "DirectTLS.h"
+
+#include "../../Zsign/CloneIdentity.h"

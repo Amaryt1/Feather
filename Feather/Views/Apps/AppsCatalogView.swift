@@ -1579,81 +1579,23 @@ private struct AppsCatalogRecentUpdatesView: View {
                     ScrollView {
                         LazyVStack(spacing: 14) {
                             ForEach(rows) { row in
-                                switch row {
-                                case .source(let entry):
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "clock")
-                                                .font(.caption2)
-                                            if let date = entry.app.currentDate?.date {
-                                                Text("تم التحديث \(date.formatted(date: .abbreviated, time: .omitted))")
-                                                    .font(.caption.weight(.medium))
-                                            }
-                                            Spacer()
-                                            Text(entry.app.currentVersion.map { "v\($0)" } ?? "")
-                                                .font(.caption2.monospaced())
-                                        }
-                                        .foregroundStyle(.secondary)
-                                        AppsCatalogPremiumCard(entry: entry) { open(entry) }
+                                VStack(spacing: 7) {
+                                    if row.date != .distantPast {
+                                        Label("تم التحديث \(row.date.formatted(date: .abbreviated, time: .omitted))", systemImage: "clock")
+                                            .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                                     }
-                                case .api(let app):
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "clock").font(.caption2)
-                                            Text("تم التحديث \(row.date.formatted(date: .abbreviated, time: .omitted))")
-                                                .font(.caption.weight(.medium))
-                                            Spacer()
-                                            Text(app.version.map { "v\($0)" } ?? "")
-                                                .font(.caption2.monospaced())
+                                    switch row {
+                                    case .source(let entry):
+                                        RecentUpdateCard(name: entry.app.currentName, summary: entry.app.currentDescription,
+                                                         version: entry.app.currentVersion, icon: entry.app.iconURL,
+                                                         open: { open(entry) }) {
+                                            CardInstallActions(route: .init(sourceURL: entry.sourceURL, source: entry.source, app: entry.app)) { open(entry) }
                                         }
-                                        .foregroundStyle(.secondary)
-                                        VStack(alignment: .leading, spacing: 11) {
-                                            Button { openAPI(app) } label: {
-                                                VStack(alignment: .leading, spacing: 10) {
-                                                    ZStack(alignment: .topTrailing) {
-                                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                                            .fill(LinearGradient(
-                                                                colors: [Color.accentColor.opacity(0.22), Color(uiColor: .secondarySystemBackground)],
-                                                                startPoint: .topLeading, endPoint: .bottomTrailing
-                                                            ))
-                                                        if let icon = app.iconURL, let url = URL(string: icon) {
-                                                            AsyncImage(url: url) { image in
-                                                                image.resizable().scaledToFit()
-                                                            } placeholder: {
-                                                                Image("App_Unknown").resizable().scaledToFit().padding(18)
-                                                            }
-                                                            .frame(width: 76, height: 76)
-                                                            .clipShape(RoundedRectangle(cornerRadius: 18))
-                                                        }
-                                                        Image(systemName: "arrow.up.right")
-                                                            .font(.caption.weight(.bold))
-                                                            .foregroundStyle(.secondary)
-                                                            .padding(9)
-                                                            .background(.thinMaterial, in: Circle())
-                                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                                                            .padding(9)
-                                                    }
-                                                    .frame(height: 126)
-                                                    VStack(alignment: .leading, spacing: 4) {
-                                                        Text(app.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
-                                                        Text(AppDescriptionSanitizer.clean(app.subtitle ?? "تطبيق"))
-                                                            .font(.caption).foregroundStyle(.secondary)
-                                                            .lineLimit(2).frame(minHeight: 34, alignment: .topLeading)
-                                                    }
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                                }
-                                            }
-                                            .buttonStyle(StorePressStyle())
-                                            HStack(spacing: 8) {
-                                                Image(systemName: "sparkles").font(.caption2).foregroundStyle(.secondary)
-                                                Text(app.version.map { "v\($0)" } ?? "Feather Store")
-                                                    .font(.caption2).foregroundStyle(.secondary)
-                                                Spacer(minLength: 2)
-                                                CatalogCardActions(app: app) { openAPI(app) }
-                                            }
+                                    case .api(let app):
+                                        RecentUpdateCard(name: app.name, summary: app.subtitle, version: app.version,
+                                                         icon: app.iconURL.flatMap { URL(string: $0) }, open: { openAPI(app) }) {
+                                            CatalogCardActions(app: app) { openAPI(app) }
                                         }
-                                        .padding(StoreTheme.inset)
-                                        .storeCard()
                                     }
                                 }
                             }
@@ -1686,6 +1628,45 @@ private struct AppsCatalogRecentUpdatesView: View {
             }
             .task { await loadNextPage() }
         }
+    }
+}
+
+private struct RecentUpdateCard<Actions: View>: View {
+    let name: String
+    let summary: String?
+    let version: String?
+    let icon: URL?
+    let open: () -> Void
+    @ViewBuilder let actions: () -> Actions
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Button(action: open) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20).fill(Color.accentColor.opacity(0.12))
+                        LazyImage(url: icon) { state in
+                            if let image = state.image { image.resizable().scaledToFit() }
+                            else { Image("App_Unknown").resizable().scaledToFit() }
+                        }
+                        .frame(width: 76, height: 76)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                    }
+                    .frame(height: 126)
+                    Text(name).font(.headline)
+                    Text(AppDescriptionSanitizer.clean(summary ?? "تطبيق"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if let version, !version.isEmpty { Text("v" + version).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+            actions()
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(StoreTheme.inset)
+        .storeCard()
     }
 }
 

@@ -1,6 +1,5 @@
 import SwiftUI
 import CoreData
-import Security
 
 @MainActor
 final class CloneBatch: ObservableObject {
@@ -38,6 +37,7 @@ final class CloneBatch: ObservableObject {
               let url = Storage.shared.getFile(.provision, from: certificate) else {
             throw DirectError("تكرار التطبيق يتطلب شهادة صالحة وتوقيعًا بملف تزويد.")
         }
+        let profile = try DirectProfile.read(url)
         try Self.validateIdentity(key, password: certificate.password ?? "", profile: url)
         var occupied = Self.reserved
         for entity in ["Imported", "Signed"] {
@@ -48,7 +48,7 @@ final class CloneBatch: ObservableObject {
                 if let id = row["identifier"] as? String { occupied.insert(id) }
             }
         }
-        let plan = try ClonePolicy.identifiers(base: base, count: count, occupied: occupied, profile: DirectProfile.read(url))
+        let plan = try ClonePolicy.identifiers(base: base, count: count, occupied: occupied, profile: profile)
         guard Self.reserved.isDisjoint(with: plan) else { throw DirectError("هذه النسخ قيد التوقيع بالفعل.") }
         held = Set(plan)
         Self.reserved.formUnion(held)
@@ -76,21 +76,14 @@ final class CloneBatch: ObservableObject {
     }
 
     private static func validateIdentity(_ p12: URL, password: String, profile: URL) throws {
-        var items: CFArray?
-        let status = SecPKCS12Import(try Data(contentsOf: p12) as CFData,
-                                     [kSecImportExportPassphrase as String: password] as CFDictionary, &items)
-        guard status == errSecSuccess, let records = items as? [[String: Any]],
-              let item = records.first?[kSecImportItemIdentity as String],
-              CFGetTypeID(item as CFTypeRef) == SecIdentityGetTypeID() else {
-            throw DirectError("تعذّر فتح هوية التوقيع المحلية. تحقق من الشهادة وكلمة مرورها.")
-        }
-        let identity = item as! SecIdentity
-        var leaf: SecCertificate?
-        guard SecIdentityCopyCertificate(identity, &leaf) == errSecSuccess, let leaf,
-              let plist = try PropertyListSerialization.propertyList(from: DirectProfile.payload(profile), format: nil) as? [String: Any],
-              let allowed = plist["DeveloperCertificates"] as? [Data],
-              allowed.contains(SecCertificateCopyData(leaf) as Data) else {
+        switch verifyCloneIdentity(p12.path, password, profile.path) {
+        case CloneIdentityValid: return
+        case CloneIdentityOutsideProfile:
             throw DirectError("شهادة التوقيع غير مدرجة في ملف التزويد المختار.")
+        case CloneIdentityOutsideValidity:
+            throw DirectError("شهادة التوقيع خارج مدة صلاحيتها.")
+        default:
+            throw DirectError("تعذّر على Zsign قراءة المفتاح والشهادة من الملفات المحددة. تحقق من ملف الشهادة وكلمة مروره وملف التزويد.")
         }
     }
 }

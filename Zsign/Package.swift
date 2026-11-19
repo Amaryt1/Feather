@@ -39,6 +39,7 @@ let package = Package(
 			sources: [
 				"Upstream/src/archo.cpp",
 				"bundle.cpp",
+                "CloneIdentity.cpp",
 				"Upstream/src/macho.cpp",
 				"Upstream/src/openssl.cpp",
 				"Upstream/swift/utils.mm",
