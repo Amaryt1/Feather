@@ -21,7 +21,7 @@ final class CloneBatch: ObservableObject {
             defer { running = false; task = nil }
             do {
                 _ = try await sign(app: app, options: options, icon: icon, certificate: certificate, count: count, expected: expected)
-                stage = "اكتمل توقيع النسخ. يمكنك تثبيتها من المكتبة."
+                stage = "اكتمل توقيع النسخة المطلوبة. يمكنك تثبيتها من المكتبة."
             } catch is CancellationError { stage = "أُلغي التوقيع. النسخ المكتملة محفوظة في المكتبة." }
             catch { stage = stage.isEmpty ? error.localizedDescription : stage + " — " + error.localizedDescription }
         }
@@ -56,7 +56,7 @@ final class CloneBatch: ObservableObject {
         NotificationCenter.default.post(name: Self.reservationsChanged, object: nil)
         for (offset, id) in plan.enumerated() {
             try Task.checkCancellation()
-            stage = "توقيع النسخة \(offset + 1) من \(count) · \(id)"
+            stage = "توقيع النسخة الإضافية · \(id)"
             var copy = options
             copy.appIdentifier = id
             copy.removeProvisioning = true
@@ -94,7 +94,9 @@ final class CloneBatch: ObservableObject {
               !existing || base == original else {
             throw DirectError("المعرّف الأساسي مستخدم بالفعل. اختر معرّفًا آخر.")
         }
-        return try ClonePolicy.identifiers(base: base, count: count, occupied: occupied)
+        guard count > 1 else { throw DirectError("النسخة الأصلية تُوقّع من المسار المعتاد.") }
+        let target = try ClonePolicy.selectedCloneIdentifier(base: base, selection: count, occupied: occupied)
+        return [target]
     }
 
     nonisolated static func validateIdentity(_ p12: URL, password: String, profile: URL) throws {
@@ -122,7 +124,7 @@ struct ClonePlanView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if !identifiers.isEmpty { Text("معرّفات النسخ قبل التوقيع").font(.caption) }
+            if !identifiers.isEmpty { Text("معرّف النسخة الإضافية التي سيتم تثبيتها").font(.caption) }
             ForEach(identifiers, id: \.self) { id in
                 Text(verbatim: id).font(.caption.monospaced()).textSelection(.enabled)
             }
