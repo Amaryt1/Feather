@@ -63,9 +63,7 @@ struct CertificatesAddView: View {
 			}
 			.sheet(isPresented: $_isImportingP12Presenting) {
 				FileImporterRepresentableView(
-					// Some Files providers classify .p12 as generic data. Choose by
-					// filename extension instead of their advertised content type.
-					allowedContentTypes: [.item],
+					allowedContentTypes: [.p12],
 					onDocumentsPicked: { urls in
 						_acceptPickedFile(urls.first, expectedExtension: "p12")
 						_isImportingP12Presenting = false
@@ -75,8 +73,7 @@ struct CertificatesAddView: View {
 			}
 			.sheet(isPresented: $_isImportingMobileProvisionPresenting) {
 				FileImporterRepresentableView(
-					// .mobileprovision is also often advertised as generic data.
-					allowedContentTypes: [.item],
+					allowedContentTypes: [.mobileProvision],
 					onDocumentsPicked: { urls in
 						_acceptPickedFile(urls.first, expectedExtension: "mobileprovision")
 						_isImportingMobileProvisionPresenting = false
