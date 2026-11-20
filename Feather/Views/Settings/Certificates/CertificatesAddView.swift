@@ -63,25 +63,36 @@ struct CertificatesAddView: View {
 			}
 			.sheet(isPresented: $_isImportingP12Presenting) {
 				FileImporterRepresentableView(
-					allowedContentTypes: [.p12],
+					// Some Files providers classify .p12 as generic data. Choose by
+					// filename extension instead of their advertised content type.
+					allowedContentTypes: [.item],
 					onDocumentsPicked: { urls in
-						guard let selectedFileURL = urls.first else { return }
-						self._p12URL = selectedFileURL
+						_acceptPickedFile(urls.first, expectedExtension: "p12")
+						_isImportingP12Presenting = false
 					}
 				)
 				.ignoresSafeArea()
 			}
 			.sheet(isPresented: $_isImportingMobileProvisionPresenting) {
 				FileImporterRepresentableView(
-					allowedContentTypes: [.mobileProvision],
+					// .mobileprovision is also often advertised as generic data.
+					allowedContentTypes: [.item],
 					onDocumentsPicked: { urls in
-						guard let selectedFileURL = urls.first else { return }
-						self._provisionURL = selectedFileURL
+						_acceptPickedFile(urls.first, expectedExtension: "mobileprovision")
+						_isImportingMobileProvisionPresenting = false
 					}
 				)
 				.ignoresSafeArea()
 			}
 		}
+        .onDisappear {
+            // Remove private-key staging files when the user leaves the
+            // certificate form without saving them.
+            if !_isImportingP12Presenting && !_isImportingMobileProvisionPresenting {
+                _discardCopiedFile(_p12URL)
+                _discardCopiedFile(_provisionURL)
+            }
+        }
 	}
 }
 
@@ -96,14 +107,67 @@ extension CertificatesAddView {
 		Button(title) {
 			action()
 		}
-		.foregroundColor(file == nil ? .accentColor : .disabled())
-		.disabled(file != nil)
+		.foregroundColor(.accentColor)
 		.animation(.easeInOut(duration: 0.3), value: file != nil)
 	}
 }
 
 // MARK: - Extension: View (import)
 extension CertificatesAddView {
+    private var _temporaryCertificateDirectory: URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("FeatherCertificateImports", isDirectory: true)
+    }
+
+    private func _discardCopiedFile(_ url: URL?) {
+        guard let url,
+              url.deletingLastPathComponent().standardizedFileURL ==
+                  _temporaryCertificateDirectory.standardizedFileURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func _acceptPickedFile(_ selected: URL?, expectedExtension: String) {
+        guard let selected else { return }
+        guard selected.pathExtension.lowercased() == expectedExtension else {
+            UIAlertController.showAlertWithOk(
+                title: .localized("Error"),
+                message: expectedExtension == "p12"
+                    ? "اختر شهادة بامتداد .p12."
+                    : "اختر ملف تزويد بامتداد .mobileprovision."
+            )
+            return
+        }
+
+        // Preserve an app-owned copy while the picker goes away. This also
+        // works with temporary URLs provided by iCloud Drive and third-party
+        // Files providers.
+        let accessing = selected.startAccessingSecurityScopedResource()
+        defer { if accessing { selected.stopAccessingSecurityScopedResource() } }
+        do {
+            try FileManager.default.createDirectory(
+                at: _temporaryCertificateDirectory,
+                withIntermediateDirectories: true
+            )
+            let copy = _temporaryCertificateDirectory.appendingPathComponent(
+                UUID().uuidString + "." + expectedExtension
+            )
+            try FileManager.default.copyItem(at: selected, to: copy)
+
+            if expectedExtension == "p12" {
+                _discardCopiedFile(_p12URL)
+                _p12URL = copy
+            } else {
+                _discardCopiedFile(_provisionURL)
+                _provisionURL = copy
+            }
+        } catch {
+            UIAlertController.showAlertWithOk(
+                title: .localized("Error"),
+                message: "تعذّر استيراد الملف: " + error.localizedDescription
+            )
+        }
+    }
+
 	private func _saveCertificate() {
 		guard
 			let p12URL = _p12URL,
@@ -127,6 +191,8 @@ extension CertificatesAddView {
                 UIAlertController.showAlertWithOk(title: .localized("Error"), message: error.localizedDescription)
                 return
             }
+            _discardCopiedFile(_p12URL)
+            _discardCopiedFile(_provisionURL)
             onSaved?()
 			dismiss()
 		}
