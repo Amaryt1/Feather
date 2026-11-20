@@ -203,48 +203,6 @@ struct StoreUpdateScreen: View {
                         } else { ProgressView() }
                     }
 
-                    if engine.phase == .ready {
-                        Button {
-                            if engine.storeUpdatePage != nil {
-                                #if !targetEnvironment(macCatalyst)
-                                BackgroundAudioManager.shared.start()
-                                #endif
-                                showingServerHandoff = true
-                            }
-                            else { engine.submit() }
-                        } label: {
-                            Label("تثبيت التحديث", systemImage: "square.and.arrow.down")
-                                .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(working)
-                    } else {
-                        Button {
-                            if checkCertificate() { engine.prepareStoreUpdate(release) }
-                        } label: {
-                            HStack(spacing: 10) {
-                                if working { ProgressView().tint(.white) }
-                                else { Image(systemName: engine.phase == .failed ? "arrow.clockwise" : "arrow.down.circle.fill") }
-                                Text(engine.phase == .failed ? "إعادة المحاولة" : "تحديث الآن")
-                            }
-                            .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(working)
-                    }
-
-                    if !working {
-                        Button { adding = true } label: {
-                            Label("إضافة شهادة", systemImage: "plus.rectangle.on.folder")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        Button { choosing = true } label: {
-                            Label("اختيار أو تغيير الشهادة", systemImage: "key.horizontal")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                    }
                     Link(destination: URL(string: "https://t.me/llydl")!) {
                         Label("التواصل عبر Telegram", systemImage: "paperplane.fill")
                             .frame(maxWidth: .infinity)
